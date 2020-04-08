@@ -3016,6 +3016,7 @@ void QPdfEnginePrivate::drawTextItem(const QPointF &p, const QTextItemInt &ti)
         last_x = x;
         last_y = y;
     }
+#if 0
     if (synthesized & QFontEngine::SynthesizedBold) {
         *currentPage << stretch << (synthesized & QFontEngine::SynthesizedItalic
                             ? "0 .3 -1 0 0 Tm\n"
@@ -3038,6 +3039,7 @@ void QPdfEnginePrivate::drawTextItem(const QPointF &p, const QTextItemInt &ti)
         }
         *currentPage << "EMC\n";
     }
+#endif
 #endif
 
     *currentPage << "ET\n";
