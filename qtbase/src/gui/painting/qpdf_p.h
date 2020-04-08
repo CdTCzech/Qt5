@@ -67,7 +67,7 @@
 QT_BEGIN_NAMESPACE
 
 const char *qt_real_to_string(qreal val, char *buf);
-const char *qt_int_to_string(int val, char *buf);
+const char *qt_qint64_to_string(qint64 val, char *buf);
 
 namespace QPdf {
 
@@ -87,6 +87,7 @@ namespace QPdf {
         ByteStream &operator <<(const ByteStream &src);
         ByteStream &operator <<(qreal val);
         ByteStream &operator <<(int val);
+        ByteStream &operator <<(qint64 val);
         ByteStream &operator <<(const QPointF &p);
         // Note that the stream may be invalidated by calls that insert data.
         QIODevice *stream();
@@ -304,9 +305,9 @@ private:
     void embedFont(QFontSubset *font);
     qreal calcUserUnit() const;
 
-    QVector<int> xrefPositions;
+    QVector<qint64> xrefPositions;
     QDataStream* stream;
-    int streampos;
+    qint64 streampos;
 
     int writeImage(const QByteArray &data, int width, int height, int depth,
                    int maskObject, int softMaskObject, bool dct = false, bool isMono = false);

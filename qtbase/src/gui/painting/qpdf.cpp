@@ -182,7 +182,7 @@ const char *qt_real_to_string(qreal val, char *buf) {
     return ret;
 }
 
-const char *qt_int_to_string(int val, char *buf) {
+const char *qt_qint64_to_string(qint64 val, char *buf) {
     const char *ret = buf;
     if (val < 0) {
         *(buf++) = '-';
@@ -278,7 +278,14 @@ namespace QPdf {
 
     ByteStream &ByteStream::operator <<(int val) {
         char buf[256];
-        qt_int_to_string(val, buf);
+        qt_qint64_to_string(static_cast<qint64>(val), buf);
+        *this << buf;
+        return *this;
+    }
+
+    ByteStream &ByteStream::operator <<(qint64 val) {
+        char buf[256];
+        qt_qint64_to_string(val, buf);
         *this << buf;
         return *this;
     }
@@ -2034,10 +2041,10 @@ void QPdfEnginePrivate::writeTail()
     addXrefEntry(xrefPositions.size(),false);
     xprintf("xref\n"
             "0 %d\n"
-            "%010d 65535 f \n", xrefPositions.size()-1, xrefPositions[0]);
+            "%010lld 65535 f \n", xrefPositions.size()-1, xrefPositions[0]);
 
     for (int i = 1; i < xrefPositions.size()-1; ++i)
-        xprintf("%010d 00000 n \n", xrefPositions[i]);
+        xprintf("%010lld 00000 n \n", xrefPositions[i]);
 
     {
         QByteArray trailer;
