@@ -263,8 +263,9 @@ static QList<QByteArray> uenumToIdList(UEnumeration *uenum)
 // Qt wrapper around ucal_getDSTSavings()
 static int ucalDaylightOffset(const QByteArray &id)
 {
+    const QString qsId = QString::fromUtf8(id);
     UErrorCode status = U_ZERO_ERROR;
-    const int32_t dstMSecs = ucal_getDSTSavings(reinterpret_cast<const UChar *>(id.data()), &status);
+    const int32_t dstMSecs = ucal_getDSTSavings(reinterpret_cast<const UChar *>(qsId.data()), &status);
     if (U_SUCCESS(status))
         return (dstMSecs / 1000);
     else
