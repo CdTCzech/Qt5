@@ -67,9 +67,9 @@ Item::Iterator::Ptr ExpressionSequence::mapToSequence(const Expression::Ptr &exp
 
 Item::Iterator::Ptr ExpressionSequence::evaluateSequence(const DynamicContext::Ptr &context) const
 {
-    return makeSequenceMappingIterator<Item>(ConstPtr(this),
-                                             makeListIterator(m_operands),
-                                             context);
+    return makeSequenceMappingIterator<Item, Expression::Ptr>(ConstPtr(this),
+                                                              makeListIterator(m_operands),
+                                                              context);
 }
 
 void ExpressionSequence::evaluateToSequenceReceiver(const DynamicContext::Ptr &context) const

@@ -45,12 +45,24 @@ QT_BEGIN_NAMESPACE
 
 using namespace QPatternist;
 
+QExplicitlySharedDataPointer<ItemType> Item::type() const
+{
+    if (isAtomicValue())
+        return asAtomicValue()->type();
+    else if (isNode())
+        return BuiltinTypes::node;
+    else
+        return QExplicitlySharedDataPointer<ItemType>();
+}
+
 Item::Iterator::Ptr Item::sequencedTypedValue() const
 {
     if(isAtomicValue())
-        return makeSingletonIterator(Item(atomicValue));
-    else
+        return makeSingletonIterator(*this);
+    else if (isNode())
         return asNode().sequencedTypedValue();
+    else
+        return Item::Iterator::Ptr();
 }
 
 QT_END_NAMESPACE

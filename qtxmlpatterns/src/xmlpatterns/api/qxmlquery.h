@@ -44,6 +44,7 @@
 #include <QtXmlPatterns/QAbstractXmlNodeModel>
 #include <QtXmlPatterns/QAbstractXmlReceiver>
 #include <QtXmlPatterns/QXmlNamePool>
+#include <QtXmlPatterns/QXmlItem>
 
 QT_BEGIN_NAMESPACE
 

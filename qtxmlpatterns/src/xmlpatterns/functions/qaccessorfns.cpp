@@ -63,7 +63,7 @@ Item NodeNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
         if(name.isNull())
             return Item();
         else
-            return toItem(QNameValue::fromValue(context->namePool(), name));
+            return Item(QNameValue::fromValue(context->namePool(), name));
     }
     else
         return Item();
@@ -119,7 +119,7 @@ Item BaseURIFN::evaluateSingleton(const DynamicContext::Ptr &context) const
         {
             Q_ASSERT_X(!base.isRelative(), Q_FUNC_INFO,
                        "The base URI must be absolute.");
-            return toItem(AnyURI::fromValue(base));
+            return Item(AnyURI::fromValue(base));
         }
         else
             return Item();
@@ -144,7 +144,7 @@ Item DocumentURIFN::evaluateSingleton(const DynamicContext::Ptr &context) const
             {
                 Q_ASSERT_X(!documentURI.isRelative(), Q_FUNC_INFO,
                            "The document URI must be absolute.");
-                return toItem(AnyURI::fromValue(documentURI));
+                return Item(AnyURI::fromValue(documentURI));
             }
         }
         else

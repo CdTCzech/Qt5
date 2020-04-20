@@ -66,29 +66,29 @@ Item LastFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 
 Item ImplicitTimezoneFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
-    return toItem(context->implicitTimezone());
+    return Item(context->implicitTimezone());
 }
 
 Item CurrentDateTimeFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
-    return toItem(DateTime::fromDateTime(context->currentDateTime()));
+    return Item(DateTime::fromDateTime(context->currentDateTime()));
 }
 
 Item CurrentDateFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
-    return toItem(Date::fromDateTime(context->currentDateTime()));
+    return Item(Date::fromDateTime(context->currentDateTime()));
 }
 
 Item CurrentTimeFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
-    return toItem(SchemaTime::fromDateTime(context->currentDateTime()));
+    return Item(SchemaTime::fromDateTime(context->currentDateTime()));
 }
 
 Expression::Ptr StaticBaseURIFN::typeCheck(const StaticContext::Ptr &context,
                                            const SequenceType::Ptr &reqType)
 {
     /* Our base URI can never be undefined. */
-    return wrapLiteral(toItem(AnyURI::fromValue(context->baseURI())), context, this)->typeCheck(context, reqType);
+    return wrapLiteral(Item(AnyURI::fromValue(context->baseURI())), context, this)->typeCheck(context, reqType);
 }
 
 Expression::Ptr DefaultCollationFN::typeCheck(const StaticContext::Ptr &context,

@@ -42,6 +42,8 @@
 #include "qstackcontextbase_p.h"
 
 #include "qdynamiccontext_p.h"
+#include "qstackcontext_p.h"
+#include "quserfunction_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -55,6 +57,11 @@ DynamicContext::Ptr DynamicContext::createFocus()
 DynamicContext::Ptr DynamicContext::createStack()
 {
     return Ptr(new StackContext(Ptr(this)));
+}
+
+DynamicContext::Ptr DynamicContext::createStack(QExplicitlySharedDataPointer<UserFunction> functionDeclaration)
+{
+    return Ptr(new StackContext(Ptr(this), functionDeclaration));
 }
 
 DynamicContext::Ptr DynamicContext::createReceiverContext(QAbstractXmlReceiver *const receiver)

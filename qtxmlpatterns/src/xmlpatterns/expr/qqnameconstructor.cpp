@@ -65,7 +65,7 @@ Item QNameConstructor::evaluateSingleton(const DynamicContext::Ptr &context) con
                                                                  context,
                                                                  m_nsResolver,
                                                                  this));
-    return toItem(QNameValue::fromValue(context->namePool(), expQName));
+    return Item(QNameValue::fromValue(context->namePool(), expQName));
 }
 
 QXmlName::NamespaceCode QNameConstructor::namespaceForPrefix(const QXmlName::PrefixCode prefix,

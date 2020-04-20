@@ -94,7 +94,7 @@ Item DecimalMathematician::calculate(const Item &o1,
                 return Item(); /* Silences source code analyzer warning. */
             }
             else
-                return toItem(Decimal::fromValue(o1.as<Numeric>()->toDecimal() / o2.as<Numeric>()->toDecimal()));
+                return Item(Decimal::fromValue(o1.as<Numeric>()->toDecimal() / o2.as<Numeric>()->toDecimal()));
         }
         case IDiv:
         {
@@ -108,7 +108,7 @@ Item DecimalMathematician::calculate(const Item &o1,
                                                                  o2.as<Numeric>()->toDecimal()));
         }
         case Substract:
-            return toItem(Decimal::fromValue(o1.as<Numeric>()->toDecimal() - o2.as<Numeric>()->toDecimal()));
+            return Item(Decimal::fromValue(o1.as<Numeric>()->toDecimal() - o2.as<Numeric>()->toDecimal()));
         case Mod:
         {
             if(o2.as<Numeric>()->toInteger() == 0)
@@ -117,12 +117,12 @@ Item DecimalMathematician::calculate(const Item &o1,
                 return Item(); /* Silences source code analyzer warning. */
             }
             else
-                return toItem(Decimal::fromValue(::fmod(o1.as<Numeric>()->toDecimal(), o2.as<Numeric>()->toDecimal())));
+                return Item(Decimal::fromValue(::fmod(o1.as<Numeric>()->toDecimal(), o2.as<Numeric>()->toDecimal())));
         }
         case Multiply:
-            return toItem(Decimal::fromValue(o1.as<Numeric>()->toDecimal() * o2.as<Numeric>()->toDecimal()));
+            return Item(Decimal::fromValue(o1.as<Numeric>()->toDecimal() * o2.as<Numeric>()->toDecimal()));
         case Add:
-            return toItem(Decimal::fromValue(o1.as<Numeric>()->toDecimal() + o2.as<Numeric>()->toDecimal()));
+            return Item(Decimal::fromValue(o1.as<Numeric>()->toDecimal() + o2.as<Numeric>()->toDecimal()));
     }
 
     Q_ASSERT(false);
@@ -143,7 +143,7 @@ Item IntegerMathematician::calculate(const Item &o1,
                 return Item(); /* Silences source code analyzer warning. */
             }
             else /* C++ automatically performs truncation of long integer(xsInteger). */
-                return toItem(Decimal::fromValue(o1.as<Numeric>()->toDecimal() / o2.as<Numeric>()->toDecimal()));
+                return Item(Decimal::fromValue(o1.as<Numeric>()->toDecimal() / o2.as<Numeric>()->toDecimal()));
         case IDiv:
         {
             if(o2.as<Numeric>()->toInteger() == 0)
@@ -273,7 +273,7 @@ Item DurationDurationMathematician::calculate(const Item &o1,
     switch(op)
     {
         case Div:
-            return toItem(Decimal::fromValue(static_cast<xsDecimal>(duration->value()) / op2));
+            return Item(Decimal::fromValue(static_cast<xsDecimal>(duration->value()) / op2));
         case Substract:
             return duration->fromValue(duration->value() - op2);
         case Add:
@@ -344,7 +344,7 @@ Item AbstractDateTimeMathematician::calculate(const Item &o1,
 
     const int diff = op == Add ? dt1.secsTo(dt2) : dt2.secsTo(dt1);
 
-    return toItem(DayTimeDuration::fromSeconds(diff));
+    return Item(DayTimeDuration::fromSeconds(diff));
 }
 
 QT_END_NAMESPACE

@@ -43,6 +43,7 @@
 #include <QtCore/QString>
 #include <QtCore/QScopedPointer>
 #include <QtXmlPatterns/qtxmlpatternsglobal.h>
+#include <QtXmlPatterns/QXmlItem>
 
 QT_BEGIN_NAMESPACE
 

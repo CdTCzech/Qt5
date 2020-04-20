@@ -1,5 +1,4 @@
-HEADERS += $$PWD/qcachingiterator_p.h          \
-           $$PWD/qdeduplicateiterator_p.h      \
+HEADERS += $$PWD/qdeduplicateiterator_p.h      \
            $$PWD/qdistinctiterator_p.h         \
            $$PWD/qemptyiterator_p.h            \
            $$PWD/qexceptiterator_p.h           \
@@ -13,10 +12,10 @@ HEADERS += $$PWD/qcachingiterator_p.h          \
            $$PWD/qsingletoniterator_p.h        \
            $$PWD/qsubsequenceiterator_p.h      \
            $$PWD/qtocodepointsiterator_p.h     \
-           $$PWD/qunioniterator_p.h
+           $$PWD/qunioniterator_p.h            \
+           $$PWD/qmodelowningiterator_p.h
 
-SOURCES += $$PWD/qcachingiterator.cpp        \
-           $$PWD/qdeduplicateiterator.cpp    \
+SOURCES += $$PWD/qdeduplicateiterator.cpp    \
            $$PWD/qdistinctiterator.cpp       \
            $$PWD/qexceptiterator.cpp         \
            $$PWD/qindexofiterator.cpp        \

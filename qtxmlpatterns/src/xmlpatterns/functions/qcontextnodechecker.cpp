@@ -53,7 +53,7 @@ void ContextNodeChecker::checkTargetNode(const QXmlNodeModelIndex &node,
                                          "to function %1 must be a document "
                                          "node. %2 is not a document node.")
                        .arg(formatFunction(context->namePool(), signature()),
-                            formatData(node)),
+                            formatKeyword(context->namePool(), node.name())),
                        code, this);
     }
 }

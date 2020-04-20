@@ -205,10 +205,8 @@ void AccelTreeBuilder<FromDocument>::attribute(const QXmlName &name, const QStri
 
         if(QXmlUtils::isNCName(normalized))
         {
-            const QXmlName::LocalNameCode id = m_namePool->allocateLocalName(normalized);
-
             const int oldSize = m_document->m_IDs.count();
-            m_document->m_IDs.insert(id, currentParent());
+            m_document->m_IDs.insert(normalized, currentParent());
             /* We don't run the value through m_attributeCompress here, because
              * the likelyhood of it deing identical to another attribute is
              * very small. */

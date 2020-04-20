@@ -40,6 +40,7 @@
 #include "qbuiltintypes_p.h"
 #include "qcommonsequencetypes_p.h"
 #include "qitemmappingiterator_p.h"
+#include "qmodelowningiterator_p.h"
 #include "qgenericsequencetype_p.h"
 #include "qparentnodeaxis_p.h"
 
@@ -120,7 +121,8 @@ Item::Iterator::Ptr AxisStep::evaluateSequence(const DynamicContext::Ptr &contex
 
     const QXmlNodeModelIndex::Iterator::Ptr source(context->contextItem().asNode().iterate(m_axis));
 
-    return makeItemMappingIterator<Item>(ConstPtr(this), source, context);
+    return makeModelHoldingIterator<Item>(makeItemMappingIterator<Item>(ConstPtr(this), source, context),
+                                          QAbstractXmlNodeModel::ConstPtr(context->contextItem().asNode().model()));
 }
 
 Item AxisStep::evaluateSingleton(const DynamicContext::Ptr &context) const

@@ -58,62 +58,29 @@ namespace QPatternist
         return Token(t);                        \
 }
 
+
 XQueryTokenizer::XQueryTokenizer(const QString &query,
                                  const QUrl &location,
                                  const State startingState) : Tokenizer(location)
-                                                            , m_data(query)
-                                                            , m_length(query.length())
+                                                            , m_queryReader(query)
                                                             , m_state(startingState)
-                                                            , m_pos(0)
-                                                            , m_line(1)
-                                                            , m_columnOffset(0)
                                                             , m_scanOnly(false)
 {
     Q_ASSERT(location.isValid() || location.isEmpty());
-}
-
-const QChar XQueryTokenizer::current() const
-{
-    if (m_pos < m_length)
-        return m_data.at(m_pos);
-    else
-        return QChar();
-}
-
-char XQueryTokenizer::peekCurrent() const
-{
-    return current().toLatin1();
 }
 
 int XQueryTokenizer::peekForColonColon() const
 {
     /* Note, we don't modify m_pos in this function, so we need to do offset
      * calculations. */
-    int pos = m_pos;
-
-    while(pos < m_length)
+    for (int length = 1; ; ++length)
     {
-        switch(m_data.at(pos).toLatin1())
-        {
-            /* Fallthrough these four. */
-            case ' ':
-            case '\t':
-            case '\n':
-            case '\r':
-                break;
-            case ':':
-            {
-                if (peekAhead((pos - m_pos) + 1) == ':')
-                    return pos - m_pos;
-                Q_FALLTHROUGH();
-            }
-            default:
-                return -1;
-        }
-        ++pos;
+        QChar c = m_queryReader.peekAhead(length);
+        if (c == ':' && m_queryReader.peekAhead(length+1) == ':')
+            return length;
+        if (!c.isSpace())
+            return -1;
     }
-
-    return -1;
 }
 
 Tokenizer::Token XQueryTokenizer::tokenAndChangeState(const TokenType code,
@@ -121,7 +88,7 @@ Tokenizer::Token XQueryTokenizer::tokenAndChangeState(const TokenType code,
                                                       const int advance)
 {
     Q_ASSERT(advance >= 0);
-    m_pos += advance;
+    m_queryReader.advance(advance);
     setState(s);
     return Token(code);
 }
@@ -138,7 +105,7 @@ Tokenizer::Token XQueryTokenizer::tokenAndAdvance(const TokenType code,
                                                   const int advance)
 {
     Q_ASSERT(advance >= 0);
-    m_pos += advance;
+    m_queryReader.advance(advance);
     return Token(code);
 }
 
@@ -188,54 +155,48 @@ Tokenizer::TokenType XQueryTokenizer::consumeComment()
 {
     /* Below, we return ERROR instead of END_OF_FILE such that the parser
      * sees an invalid comment. */
-    while(m_pos < m_length)
+    while(!m_queryReader.atEnd())
     {
-        switch(peekCurrent())
+        switch(m_queryReader.current().toLatin1())
         {
             case ':':
             {
-                ++m_pos; /* Consume ':' */
-                if (atEnd())
-                    return T_ERROR;
+                m_queryReader.consume(':');
 
-                if (peekCurrent() == ')')
+                if (m_queryReader.atEnd())
+                    return T_ERROR;
+                else if(m_queryReader.current() == ')')
                 {
-                    ++m_pos; /* Consume ')' */
+                    m_queryReader.consume(')');
                     return T_SUCCESS; /* The comment closed nicely. */
                 }
-                continue; /* We don't want to increment m_pos twice. */
+                break;
             }
             case '(':
             { /* It looks like the start of a comment. */
-                ++m_pos;
+                m_queryReader.consume('(');
 
-                if (atEnd())
+                if(m_queryReader.atEnd())
                     return T_END_OF_FILE;
-                else if (peekCurrent() == ':')
+                else if (m_queryReader.current() == ':')
                 {
+                    m_queryReader.consume(':');
+
                     /* And it is a nested comment -- parse it. */
                     const TokenType retval = consumeComment();
-                    if (retval == T_SUCCESS)
-                        continue; /* Continue with our "own" comment. */
+                    if(retval == T_SUCCESS)
+                        break; /* Continue with our "own" comment. */
                     else
                         return retval; /* Return the error in the nested comment. */
                 }
                 break;
             }
-            case '\n':
-            case '\r':
+            default:
             {
-                /* We want to count \r\n as a single line break. */
-                if (peekAhead() == '\n')
-                    ++m_pos;
-
-                m_columnOffset = m_pos;
-                ++m_line;
-
+                m_queryReader.next();
                 break;
             }
         }
-        ++m_pos;
     }
 
     return T_ERROR; /* Error: we reached the end while inside a comment. */
@@ -243,92 +204,39 @@ Tokenizer::TokenType XQueryTokenizer::consumeComment()
 
 bool XQueryTokenizer::consumeRawWhitespace()
 {
-    while(m_pos < m_length)
+    while(!m_queryReader.atEnd())
     {
-        switch(peekCurrent())
-        {
-            case ' ':
-            case '\t':
-                break;
-            case '\n':
-            case '\r':
-            {
-                if (peekAhead() == '\n')
-                    ++m_pos;
+        QChar c = m_queryReader.current();
+        if (!c.isSpace())
+            return false;
 
-                m_columnOffset = m_pos;
-                ++m_line;
-
-                break;
-            }
-            default:
-                return false;
-        }
-        ++m_pos;
+        m_queryReader.next();
     }
     return true;
 }
 
 Tokenizer::TokenType XQueryTokenizer::consumeWhitespace()
 {
-    while(m_pos < m_length)
+    while(!m_queryReader.atEnd())
     {
-        switch(peekCurrent())
-        {
-            case ' ':
-            case '\t':
-                break;
-            case '\n':
-            case '\r':
-            {
-                /* We want to count \r\n as a single line break. */
-                if (peekAhead() == '\n')
-                    ++m_pos;
-
-                m_columnOffset = m_pos;
-                ++m_line;
-
-                break;
-            }
-            case '(':
-            {
-                if (peekAhead() == ':')
-                {
-                    m_pos += 2; /* Consume "(:" */
-
-                    const TokenType comment = consumeComment();
-                    if (comment == T_SUCCESS)
-                        continue;
-                    else
-                        return comment;
-                }
-                Q_FALLTHROUGH();
-            }
-            default:
-                return T_SUCCESS;
+        QChar c = m_queryReader.current();
+        if (c == '(' && m_queryReader.peekAhead() == ':') {
+            m_queryReader.consume(QLatin1String("(:"));
+            const TokenType comment = consumeComment();
+            if(comment != T_SUCCESS)
+                return comment;
+        } else if (!c.isSpace()) {
+            return T_SUCCESS;
         }
-        ++m_pos;
+        m_queryReader.next();
     }
 
     return T_END_OF_FILE;
 }
 
-char XQueryTokenizer::peekAhead(const int length) const
-{
-    if (m_pos + length < m_length)
-        return m_data.at(m_pos + length).toLatin1();
-    else
-        return 0;
-}
-
 Tokenizer::Token XQueryTokenizer::error()
 {
     return Token(T_ERROR);
-}
-
-bool XQueryTokenizer::isDigit(const char ch)
-{
-    return ch >= '0' && ch <= '9';
 }
 
 /* Replace with function in QXmlUtils. Write test cases for this. */
@@ -352,7 +260,7 @@ bool XQueryTokenizer::isNCNameStart(const QChar ch)
 
 bool XQueryTokenizer::isNCNameBody(const QChar ch)
 {
-    switch(ch.unicode())
+    switch(ch.toLatin1())
     {
         case '.':
         case '_':
@@ -467,93 +375,93 @@ bool XQueryTokenizer::isTypeToken(const TokenType t)
 
 Tokenizer::Token XQueryTokenizer::tokenizeNCNameOrQName()
 {
-    const int start = m_pos;
+    const int start = m_queryReader.pos();
 
     const Token t1 = tokenizeNCName();
-    if (t1.hasError())
+    if(t1.hasError())
         return t1;
 
-    if (peekCurrent() != ':' || peekAhead() == '=')
+    if(m_queryReader.current() != ':' || m_queryReader.peekAhead() == '=')
         return t1;
 
-    ++m_pos;
+    m_queryReader.next();
 
     const Token t2 = tokenizeNCName();
-    if (t2.hasError())
+    if(t2.hasError())
         return t2;
     else
-        return Token(T_QNAME, m_data.mid(start, m_pos - start));
+        return Token(T_QNAME, m_queryReader.mid(start, m_queryReader.pos() - start));
 }
 
 Tokenizer::Token XQueryTokenizer::tokenizeNumberLiteral()
 {
     setState(Operator);
-    const int startPos = m_pos;
+    const int startPos = m_queryReader.pos();
     bool hasDot = false;
     bool isXPath20 = false;
 
-    for(; m_pos < m_length; ++m_pos)
+    for(; !m_queryReader.atEnd(); m_queryReader.next())
     {
-        QChar ch(current());
+        QChar ch(m_queryReader.current());
 
         char cell = ch.cell();
 
-        if (cell == 'e' || cell == 'E')
+        if(cell == 'e' || cell == 'E')
         {
             isXPath20 = true;
-            ++m_pos;
-            ch = current();
+            m_queryReader.next();
+            ch = m_queryReader.current();
 
-            if (ch.row() != 0)
+            if(ch.row() != 0)
                 break;
 
             cell = ch.cell();
 
-            if (cell == '+' || cell == '-')
+            if(cell == '+' || cell == '-')
                 continue;
         }
 
-        if (isNCNameStart(ch))
+        if(isNCNameStart(ch))
             return error();
 
-        if (cell < '0' || cell > '9')
+        if(cell < '0' || cell > '9')
         {
-            if (cell == '.' && !hasDot)
+            if(cell == '.' && !hasDot)
                 hasDot = true;
             else
                 break;
         }
     }
 
-    return Token(isXPath20 ? T_XPATH2_NUMBER : T_NUMBER, m_data.mid(startPos, m_pos - startPos));
+    return Token(isXPath20 ? T_XPATH2_NUMBER : T_NUMBER, m_queryReader.mid(startPos, m_queryReader.pos() - startPos));
 }
 
 QString XQueryTokenizer::tokenizeCharacterReference()
 {
-    Q_ASSERT(peekCurrent() == '&');
+    Q_ASSERT(m_queryReader.current() == '&');
+    m_queryReader.next();
 
-    const int theEnd = m_data.indexOf(QLatin1Char(';'), m_pos + 1);
-
-    if (theEnd == -1) /* No ';' found, a syntax error. i18n. */
-        return QString();
-
-    QString content(m_data.mid(m_pos + 1, (theEnd - m_pos) - 1));
-    m_pos = theEnd;
+    QString content;
+    for ( ; m_queryReader.current() != ';'; m_queryReader.next()) {
+        if (m_queryReader.atEnd())
+            return QString();
+        content.append(m_queryReader.current());
+    }
 
     const QChar charRef(charForReference(content));
 
-    if (!charRef.isNull())
+    if(!charRef.isNull())
         return charRef;
-    else if (content.startsWith(QLatin1Char('#')))
+    else if(content.startsWith(QLatin1Char('#')))
     {
         int base;
 
         /* It is only '#' or '#x'. */
-        if (content.length() < 2)
+        if(content.length() < 2)
             return QString();
 
         /* We got a hex number if it starts with 'x', otherwise it's a decimal. */
-        if (content.at(1) == QLatin1Char('x'))
+        if(content.at(1) == QLatin1Char('x'))
         {
             base = 16;
             content = content.mid(2); /* Remove "#x". */
@@ -567,11 +475,11 @@ QString XQueryTokenizer::tokenizeCharacterReference()
         bool conversionOK = false;
         const int codepoint = content.toInt(&conversionOK, base);
 
-        if (conversionOK)
+        if(conversionOK)
         {
             const QChar ch(codepoint);
 
-            if (ch.isNull())
+            if(ch.isNull())
             {
                 /* We likely have something which require surrogate pairs. */
                 QString result;
@@ -589,18 +497,17 @@ QString XQueryTokenizer::tokenizeCharacterReference()
         return QString();
 }
 
-int XQueryTokenizer::scanUntil(const char *const content)
+int XQueryTokenizer::scanUntil(const QString &content)
 {
-    const int end = m_data.indexOf(QString::fromLatin1(content), m_pos);
-
-    if (end == -1)
-        return -1;
-    else
+    int len = 0;
+    while (!m_queryReader.atEnd())
     {
-        const int len = end - m_pos;
-        m_pos += len;
-        return len;
+        if (aheadEquals(content, 0))
+            return len;
+        m_queryReader.next();
+        ++len;
     }
+    return -1;
 }
 
 QChar XQueryTokenizer::charForReference(const QString &reference)
@@ -621,7 +528,7 @@ QChar XQueryTokenizer::charForReference(const QString &reference)
 
 Tokenizer::Token XQueryTokenizer::tokenizeStringLiteral()
 {
-    const QChar delimiter(current());
+    const QChar delimiter(m_queryReader.current());
     /* We cannot unfortunately just scan and then do mid(),
      * since we can encounter character references. */
     QString result;
@@ -632,17 +539,17 @@ Tokenizer::Token XQueryTokenizer::tokenizeStringLiteral()
     CharacterSkips skipEOLNormalization;
 
     /* Advance over the initial quote character. */
-    ++m_pos;
+    m_queryReader.next();
 
-    for(; m_pos < m_length; ++m_pos)
+    for(; !m_queryReader.atEnd(); m_queryReader.next())
     {
-        const QChar c(current());
+        const QChar c(m_queryReader.current());
 
-        if (c == QLatin1Char('&'))
+        if(c == QLatin1Char('&'))
         {
             const QString charRef(tokenizeCharacterReference());
 
-            if (charRef.isNull())
+            if(charRef.isNull())
                 return error();
             else
             {
@@ -651,13 +558,13 @@ Tokenizer::Token XQueryTokenizer::tokenizeStringLiteral()
             }
 
         }
-        else if (c == delimiter)
+        else if(c == delimiter)
         {
             /* Maybe the escaping mechanism is used. For instance, "s""s"
              * has the value `s"s'. */
-            ++m_pos;
+            m_queryReader.next();
 
-            if (current() == delimiter) /* Double quote. */
+            if(m_queryReader.current() == delimiter) /* Double quote. */
                 result += delimiter;
             else
                 return Token(T_STRING_LITERAL, normalizeEOL(result, skipEOLNormalization));
@@ -671,19 +578,19 @@ Tokenizer::Token XQueryTokenizer::tokenizeStringLiteral()
 
 Tokenizer::Token XQueryTokenizer::tokenizeNCName()
 {
-    const int startPos = m_pos;
+    const int startPos = m_queryReader.pos();
 
-    if (m_pos < m_length && isNCNameStart(current()))
+    if(!m_queryReader.atEnd() && isNCNameStart(m_queryReader.current()))
     {
-        ++m_pos;
+        m_queryReader.next();
 
-        for(; m_pos < m_length; ++m_pos)
+        for(; !m_queryReader.atEnd(); m_queryReader.next())
         {
-            if (!isNCNameBody(current()))
+            if(!isNCNameBody(m_queryReader.current()))
                 break;
         }
 
-        return Token(T_NCNAME, m_data.mid(startPos, m_pos - startPos));
+        return Token(T_NCNAME, m_queryReader.mid(startPos, m_queryReader.pos() - startPos));
     }
     else
         return error();
@@ -693,18 +600,15 @@ bool XQueryTokenizer::aheadEquals(const char *const chs,
                                   const int len,
                                   const int offset) const
 {
-    Q_ASSERT(len > 0);
-    Q_ASSERT(qstrlen(chs) == uint(len));
+    return aheadEquals(QLatin1String(chs, len), offset);
+}
 
-    if (m_pos + len >= m_length)
-        return false;
-
-    for(int i = offset; i < (len + offset); ++i)
-    {
-        if (m_data.at(m_pos + i).toLatin1() != chs[i - offset])
+bool XQueryTokenizer::aheadEquals(const QString &chs, int offset) const
+{
+    for (int i=0; i < chs.size(); i++) {
+        if (chs[i] != m_queryReader.peekAhead(i + offset))
             return false;
     }
-
     return true;
 }
 
@@ -767,7 +671,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         case XMLSpaceDecl:
         case NamespaceKeyword:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case ',':
                     return tokenAndAdvance(T_COMMA);
@@ -824,7 +728,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case NamespaceDecl:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '=':
                     return tokenAndAdvance(T_G_EQ);
@@ -839,7 +743,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
 
             handleWhitespace();
 
-            const char pc = peekCurrent();
+            QChar pc = m_queryReader.current();
             const TokenMap* const t = lookupKeyword(nc.value);
 
             if (pc == '\'' || (pc == '"' && t))
@@ -849,10 +753,10 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case Axis:
         {
-            if (peekCurrent() == ':')
+            if(m_queryReader.current() == ':')
             {
-                Q_ASSERT(peekAhead() == ':');
-                m_pos += 2;
+                Q_ASSERT(m_queryReader.peekAhead() == ':');
+                m_queryReader.consume(QLatin1String("::"));
                 setState(AfterAxisSeparator);
                 return Token(T_COLONCOLON);
             }
@@ -866,7 +770,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             Q_FALLTHROUGH();
         case Operator:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '=':
                     return tokenAndChangeState(T_G_EQ, Default);
@@ -906,13 +810,13 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     return tokenizeNumberLiteral();
                 case '.':
                 {
-                    const char next = peekAhead();
+                    QChar next = m_queryReader.peekAhead();
                     if (next == '.')
                         return tokenAndChangeState(T_DOTDOT, Operator, 2);
                     /* .5 is allowed, as short form for 0.5:
                      * <tt>[142]     DecimalLiteral     ::=     ("." Digits) | (Digits "." [0-9]*)</tt>
                      */
-                    else if (isDigit(next))
+                    else if(next.isDigit())
                         return tokenizeNumberLiteral();
                     else
                         return tokenAndChangeState(T_DOT, Operator);
@@ -926,16 +830,16 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 case '(':
                 {
-                    if (peekAhead() == '#')
+                   if(m_queryReader.peekAhead() == '#')
                         return tokenAndChangeState(T_PRAGMA_START, Pragma, 2);
                     else
                         return tokenAndChangeState(T_LPAREN, Default);
                 }
                 case '*':
                 {
-                    if (peekAhead() == ':')
+                    if(m_queryReader.peekAhead() == ':')
                     {
-                        m_pos += 2; /* Consume *:. */
+                        m_queryReader.consume(QLatin1String("*:")); /* Consume '*' */
                         const Token nc = tokenizeNCName();
 
                         if (nc.hasError())
@@ -948,7 +852,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 case ':':
                 {
-                    switch(peekAhead())
+                    switch(m_queryReader.peekAhead().toLatin1())
                     {
                         case '=':
                             return tokenAndChangeState(T_ASSIGN, Default, 2);
@@ -960,14 +864,14 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 case '!':
                 {
-                    if (peekAhead() == '=')
+                    if(m_queryReader.peekAhead() == '=')
                         return tokenAndChangeState(T_G_NE, Default, 2);
                     else
                         return error();
                 }
                 case '<':
                 {
-                    switch(peekAhead())
+                    switch(m_queryReader.peekAhead().toLatin1())
                     {
                         case '=':
                             return tokenAndChangeState(T_G_LE, Default, 2);
@@ -982,7 +886,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                         {
                             if (aheadEquals("!--", 3))
                             {
-                                m_pos += 3; /* Consume "!--". */
+                                m_queryReader.consume(QLatin1String("<!-"));
                                 pushState(Operator);
                                 return tokenAndChangeState(T_COMMENT_START, XMLComment);
                             }
@@ -991,7 +895,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                         }
                         default:
                         {
-                            if ((m_pos + 1) < m_length && isNCNameStart(m_data.at(m_pos + 1)))
+                            if(m_queryReader.peekAhead() != QChar() && isNCNameStart(m_queryReader.peekAhead()))
                             {
                                 /* We assume it's an element constructor. */
                                 pushState(Operator);
@@ -1003,7 +907,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 case '>':
                 {
-                    switch(peekAhead())
+                    switch(m_queryReader.peekAhead().toLatin1())
                     {
                         case '=':
                             return tokenAndChangeState(T_G_GE, Default, 2);
@@ -1015,7 +919,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 case '/':
                 {
-                    if (peekAhead() == '/')
+                    if(m_queryReader.peekAhead() == '/')
                         return tokenAndChangeState(T_SLASHSLASH, Default, 2);
                     else
                         return tokenAndChangeState(T_SLASH, Default);
@@ -1113,19 +1017,19 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                  * If we have a colon colon, which means the whitespace is
                  * allowed, we skip it. */
                 if (wsLength != -1)
-                    m_pos += wsLength;
+                    m_queryReader.advance(wsLength);
             }
 
             /* Handle name tests. */
-            if (peekCurrent() == ':')
+           if(m_queryReader.current() == ':')
             {
-                switch(peekAhead())
+                switch(m_queryReader.peekAhead().toLatin1())
                 {
                     case '=':
                         return id;
                     case '*':
                     {
-                        m_pos += 2;
+                        m_queryReader.consume(QLatin1String(":*"));
                         return tokenAndChangeState(T_ANY_LOCAL_NAME, id.value, Operator);
                     }
                     case ':':
@@ -1137,19 +1041,19 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     default:
                     {
                         /* It's a QName. */
-                        ++m_pos; /* Consume the colon. */
+                        m_queryReader.consume(QLatin1String(":"));
 
                         const Token id2(tokenizeNCName());
 
                         if (id2.type != T_NCNAME)
                         {
-                            --m_pos;
+                            m_queryReader.advance(-1);
                             return id;
                         }
 
                         setState(Operator);
                         const int qNameLen = id.value.length() + id2.value.length() + 1;
-                        return Token(T_QNAME, m_data.mid(m_pos - qNameLen, qNameLen));
+                        return Token(T_QNAME, m_queryReader.mid(m_queryReader.pos() - qNameLen, qNameLen));
                     }
                 }
             }
@@ -1164,7 +1068,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             if (ws == T_ERROR) // TODO this should test for success. Write test.
                 return Token(T_ERROR);
 
-            if (atEnd())
+            if(m_queryReader.atEnd())
             {
                 setState(Operator);
                 return id;
@@ -1177,7 +1081,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                keyword->token == T_UNORDERED ||
                keyword->token == T_IF)
             {
-                switch(peekCurrent())
+                switch(m_queryReader.current().toLatin1())
                 {
                     case '(':
                     {
@@ -1185,7 +1089,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                         if (isTypeToken(keyword->token) && keyword->token != T_DOCUMENT)
                         {
                             m_tokenStack.push(Token(T_LPAREN));
-                            ++m_pos; /* Consume '('. */
+                            m_queryReader.consume('(');
                             pushState(Operator);
 
                             if (keyword->token == T_PROCESSING_INSTRUCTION)
@@ -1203,7 +1107,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     case '{':
                     {
                         m_tokenStack.push(Token(T_CURLY_LBRACE));
-                        ++m_pos; /* Consume '{'. */
+                        m_queryReader.consume('{');
                         pushState(Operator);
                         /* Stay in state Default. */
                         return Token(keyword->token);
@@ -1218,9 +1122,9 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                          * "element return" can be an element test followed by
                          * the return keyword, but it can also be an element
                          * constructor("element return {"). */
-                        if (isNCNameStart(current()))
+                        if(isNCNameStart(m_queryReader.current()))
                         {
-                            const int currentPos = m_pos;
+                            const int currentPos = m_queryReader.pos();
                             const Token token2 = tokenizeNCNameOrQName();
 
                             if (token2.hasError())
@@ -1228,7 +1132,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
 
                             handleWhitespace();
 
-                            if (peekCurrent() == '{')
+                            if(m_queryReader.current() == '{')
                             {
                                 /* An element constructor. */
                                 m_tokenStack.push(token2);
@@ -1237,7 +1141,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
 
                             /* We jump back in the stream, we need to tokenize token2 according
                              * to the state. */
-                            m_pos = currentPos;
+                            m_queryReader.setPos(currentPos);
                             setState(Operator);
                             return Token(T_NCNAME, QLatin1String(keyword->name));
                         }
@@ -1245,19 +1149,19 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
             }
 
-            if (peekCurrent() == '$')
+            if(m_queryReader.current() == '$')
             {
                 setState(VarName);
                 return Token(keyword->token);
             }
 
             /* It's not a node type, it's not the typeswitch expression, but it is a function callsite. */
-            if (peekCurrent() == '(')
+            if(m_queryReader.current() == '(')
                 return id;
-            else if (peekCurrent() == '{' && keyword->token == T_VALIDATE)
+            else if(m_queryReader.current() == '{' && keyword->token == T_VALIDATE)
                 return Token(keyword->token);
 
-            if (!isNCNameStart(current()))
+            if(!isNCNameStart(m_queryReader.current()))
             {
                 setState(Operator);
                 return id;
@@ -1427,7 +1331,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case VarName:
         {
-            if (peekCurrent() == '$')
+            if(m_queryReader.current() == '$')
                 return tokenAndAdvance(T_DOLLAR);
 
             setState(Operator);
@@ -1435,7 +1339,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case ItemType:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '(':
                     return tokenAndChangeState(T_LPAREN, KindTest);
@@ -1471,7 +1375,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case KindTest:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case ')':
                 {
@@ -1499,7 +1403,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             if (ws == T_ERROR)
                 return error();
 
-            if (peekCurrent() == '(')
+            if(m_queryReader.current() == '(')
             {
                 const TokenMap *const keyword = lookupKeyword(nc.value);
                 if (keyword)
@@ -1515,7 +1419,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case KindTestForPI:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case ')':
                 {
@@ -1531,7 +1435,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case OccurrenceIndicator:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '?':
                     return tokenAndChangeState(T_QUESTION, Operator);
@@ -1548,7 +1452,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case XQueryVersion:
         {
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '\'':
                 case '"':
@@ -1570,9 +1474,9 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case StartTag:
         {
-            if (peekAhead(-1) == '<')
+            if(m_queryReader.peekAhead(-1) == '<')
             {
-                if (current().isSpace())
+                if(m_queryReader.current().isSpace())
                     return Token(T_ERROR);
             }
             else
@@ -1581,13 +1485,13 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     return Token(T_END_OF_FILE);
             }
 
-            switch(peekCurrent())
+            switch(m_queryReader.current().toLatin1())
             {
                 case '/':
                 {
-                    if (peekAhead() == '>')
+                    if(m_queryReader.peekAhead() == '>')
                     {
-                        m_pos += 2;
+                        m_queryReader.consume(QLatin1String("/>"));
 
                         if (m_scanOnly)
                             return Token(T_POSITION_SET);
@@ -1624,16 +1528,16 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             QString result;
             result.reserve(20);
 
-            if (m_scanOnly)
+            if(m_scanOnly)
             {
                 int stack = 0;
-                return attributeAsRaw(sep, stack, m_pos, true, result);
+                return attributeAsRaw(sep, stack, m_queryReader.pos(), true, result);
             }
 
             Q_ASSERT(!m_scanOnly);
             while(true)
             {
-                if (atEnd())
+                if(m_queryReader.atEnd())
                 {
                     /* In the case that the XSL-T tokenizer invokes us with
                      * default state QuotAttributeContent, we need to be able
@@ -1645,22 +1549,23 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                         return Token(T_STRING_LITERAL, result);
                 }
 
-                const QChar curr(current());
+                const QChar curr(m_queryReader.current());
 
                 if (curr == sep)
                 {
-                    if (m_pos + 1 == m_length)
+                    if(m_queryReader.peekAhead() == QChar())
                         return Token(T_END_OF_FILE);
 
-                    if (m_data.at(m_pos + 1) == sep)
+                    if(m_queryReader.peekAhead() == sep)
                     {
                         /* The quoting mechanism was used. */
-                        m_pos += 2;
+                        m_queryReader.consume(sep);
+                        m_queryReader.consume(sep);
                         result.append(sep);
                         continue;
                     }
 
-                    const QChar next(m_data.at(m_pos + 1));
+                    const QChar next(m_queryReader.peekAhead());
                     if (!next.isSpace() && next != QLatin1Char('/') && next != QLatin1Char('>'))
                         return Token(T_ERROR); // i18n Space must separate attributes
 
@@ -1675,11 +1580,11 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 else if (curr == QLatin1Char('{'))
                 {
-                    if (m_pos + 1 == m_length)
+                    if(m_queryReader.peekAhead() == QChar())
                         return Token(T_END_OF_FILE);
-                    else if (peekAhead() == '{')
+                    else if(m_queryReader.peekAhead() == '{')
                     {
-                        ++m_pos;
+                        m_queryReader.next();
                         result.append(QLatin1Char('{'));
                     }
                     else
@@ -1699,11 +1604,11 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 }
                 else if (curr == QLatin1Char('}'))
                 {
-                    if (m_pos + 1 == m_length)
+                    if(m_queryReader.peekAhead() == QChar())
                         return Token(T_END_OF_FILE);
-                    else if (peekAhead() == '}')
+                    else if(m_queryReader.peekAhead() == '}')
                     {
-                        ++m_pos;
+                        m_queryReader.next();
                         result.append(QLatin1Char('}'));
                     }
                     else
@@ -1730,10 +1635,10 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     {
                         case 0xD:
                         {
-                            if (peekAhead() == '\n')
+                            if(m_queryReader.peekAhead() == '\n')
                             {
                                 result.append(QLatin1Char(' '));
-                                ++m_pos;
+                                m_queryReader.next();
                                 break;
                             }
                             Q_FALLTHROUGH();
@@ -1749,7 +1654,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     }
                 }
 
-                ++m_pos;
+                m_queryReader.next();
             }
         }
         case ElementContent:
@@ -1765,32 +1670,32 @@ Tokenizer::Token XQueryTokenizer::nextToken()
 
             while(true)
             {
-                if (atEnd())
+                if(m_queryReader.atEnd())
                     return Token(T_END_OF_FILE);
 
-                switch(peekCurrent())
+                switch(m_queryReader.current().toLatin1())
                 {
                     case '<':
                     {
-                        if (!result.isEmpty() && peekAhead(2) != '[')
+                        if(!result.isEmpty() && m_queryReader.peekAhead(2) != '[')
                         {
                             /* We encountered the end, and it was not a CDATA section. */
                             /* We don't advance. Next time we'll handle the <... stuff. */
                             return Token(mayBeWS ? T_STRING_LITERAL : T_NON_BOUNDARY_WS, normalizeEOL(result, skipEOLNormalization));
                         }
 
-                        ++m_pos;
-                        if (atEnd())
+                         m_queryReader.next();
+                        if(m_queryReader.atEnd())
                             return Token(T_END_OF_FILE);
 
-                        const QChar ahead(current());
+                        const QChar ahead(m_queryReader.current());
                         if (ahead.isSpace())
                             return error();
                         else if (ahead == QLatin1Char('/'))
                         {
-                            if (m_pos + 1 == m_length)
+                            if(m_queryReader.peekAhead() == QChar())
                                 return Token(T_END_OF_FILE);
-                            else if (m_data.at(m_pos + 1).isSpace())
+                            else if(m_queryReader.peekAhead().isSpace())
                                 return error();
                             else
                                 return tokenAndChangeState(T_BEGIN_END_TAG, EndTag);
@@ -1803,21 +1708,21 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                         else if (aheadEquals("!--", 3, 0))
                         {
                             pushState();
-                            m_pos += 3;
+                            m_queryReader.consume(QLatin1String("!--"));
                             return tokenAndChangeState(T_COMMENT_START, XMLComment, 0);
                         }
                         else if (aheadEquals("![CDATA[", 8, 0))
                         {
                             mayBeWS = false;
-                            m_pos += 8;
-                            const int start = m_pos;
-                            const int len = scanUntil("]]>");
+                            m_queryReader.consume(QLatin1String("![CDATA["));
+                            const int start = m_queryReader.pos();
+                            const int len = scanUntil(QLatin1String("]]>"));
 
-                            if (len == -1)
+                            if(len == -1)
                                 return Token(T_END_OF_FILE);
 
-                            m_pos += 2; /* Consume "]]>". Note that m_pos is on '!'. */
-                            result.append(m_data.mid(start, len));
+                            m_queryReader.consume(QLatin1String("]]"));
+                            result.append(m_queryReader.mid(start, len));
                             break;
                         }
                         else if (ahead == QLatin1Char('?'))
@@ -1844,11 +1749,11 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     case '{':
                     {
                         // TODO remove this check, also below.
-                        if (m_pos + 1 == m_length)
+                        if(m_queryReader.peekAhead() == QChar())
                             return Token(T_END_OF_FILE);
-                        else if (peekAhead() == '{')
+                        else if(m_queryReader.peekAhead() == '{')
                         {
-                            ++m_pos;
+                            m_queryReader.consume('{');
                             result.append(QLatin1Char('{'));
                         }
                         else
@@ -1868,11 +1773,11 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     }
                     case '}':
                     {
-                        if (m_pos + 1 == m_length)
+                        if(m_queryReader.peekAhead() == QChar())
                             return Token(T_END_OF_FILE);
-                        else if (peekAhead() == '}')
+                        else if(m_queryReader.peekAhead() == '}')
                         {
-                            ++m_pos;
+                            m_queryReader.consume('}');
                             result.append(QLatin1Char('}'));
                         }
                         else
@@ -1886,7 +1791,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     case '\n':
                     {
                         /* We want to translate \r\n into \n. */
-                        if (peekAhead(-1) == '\r')
+                        if(m_queryReader.peekAhead(-1) == '\r')
                             break;
                         Q_FALLTHROUGH();
                     }
@@ -1897,27 +1802,27 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                     }
                     default:
                     {
-                        result.append(current());
+                        result.append(m_queryReader.current());
                         break;
                     }
                 }
-                ++m_pos;
+                m_queryReader.next();
             }
         }
         case ProcessingInstructionName:
         {
-            const int start = m_pos;
+            const int start = m_queryReader.pos();
 
             while(true)
             {
-                ++m_pos;
-                if (m_pos >= m_length)
+                m_queryReader.next();
+                if(m_queryReader.atEnd())
                     return Token(T_END_OF_FILE);
 
-                const QChar next(current());
-                if (next.isSpace() || next == QLatin1Char('?'))
+                const QChar next(m_queryReader.current());
+                if(next.isSpace() || next == QLatin1Char('?'))
                 {
-                    return tokenAndChangeState(T_PI_TARGET, m_data.mid(start, m_pos - start),
+                    return tokenAndChangeState(T_PI_TARGET, m_queryReader.mid(start, m_queryReader.pos() - start),
                                                ProcessingInstructionContent);
                 }
             }
@@ -1928,16 +1833,16 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             if (consumeRawWhitespace())
                 return Token(T_END_OF_FILE);
 
-            const int start = m_pos;
-            const int len = scanUntil("?>");
+            const int start = m_queryReader.pos();
+            const int len = scanUntil(QLatin1String("?>"));
 
             if (len == -1)
                 return Token(T_END_OF_FILE);
             else
             {
-                m_pos += 2; /* Consume "?>" */
+                m_queryReader.consume(QLatin1String("?>"));
                 popState();
-                return Token(T_PI_CONTENT, normalizeEOL(m_data.mid(start, len), CharacterSkips()));
+                return Token(T_PI_CONTENT, normalizeEOL(m_queryReader.mid(start, len), CharacterSkips()));
             }
         }
         case EndTag:
@@ -1945,7 +1850,7 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             if (consumeRawWhitespace())
                 return T_END_OF_FILE;
 
-            if (peekCurrent() == '>')
+            if(m_queryReader.current() == '>')
             {
                 popState();
                 return tokenAndAdvance(T_G_GT);
@@ -1955,20 +1860,20 @@ Tokenizer::Token XQueryTokenizer::nextToken()
         }
         case XMLComment:
         {
-            const int start = m_pos;
-            const int len = scanUntil("--");
+            const int start = m_queryReader.pos();
+            const int len = scanUntil(QLatin1String("--"));
 
-            if (len == -1)
+            if(len == -1)
                 return T_END_OF_FILE;
             else
             {
-                m_pos += 2; /* Consume "--". */
+                m_queryReader.consume(QLatin1String("--"));
                 popState();
 
-                if (peekCurrent() == '>')
+                if(m_queryReader.current() == '>')
                 {
-                    ++m_pos;
-                    return Token(T_COMMENT_CONTENT, normalizeEOL(m_data.mid(start, len), CharacterSkips()));
+                    m_queryReader.consume('>');
+                    return Token(T_COMMENT_CONTENT, normalizeEOL(m_queryReader.mid(start, len), CharacterSkips()));
                 }
                 else
                     return error();
@@ -1988,13 +1893,13 @@ Tokenizer::Token XQueryTokenizer::nextToken()
             QString result;
             result.reserve(20);
 
-            const bool hasWS = m_pos < m_length && current().isSpace();
+            const bool hasWS = !m_queryReader.atEnd() && m_queryReader.current().isSpace();
 
             /* Consume all whitespace up to the pragma content(if any). */
             if (consumeRawWhitespace())
                 return Token(T_END_OF_FILE);
 
-            if (peekCurrent() == '#' && peekAhead() == ')')
+            if(m_queryReader.current() == '#' && m_queryReader.peekAhead() == ')')
             {
                 /* We reached the end, and there's no pragma content. */
                 return tokenAndChangeState(T_PRAGMA_END, Default, 2);
@@ -2005,12 +1910,12 @@ Tokenizer::Token XQueryTokenizer::nextToken()
                 return error(); /* i18n */
             }
 
-            const int start = m_pos;
-            const int len = scanUntil("#)");
+            const int start = m_queryReader.pos();
+            const int len = scanUntil(QLatin1String("#)"));
             if (len == -1)
                 return Token(T_END_OF_FILE);
 
-            return Token(T_STRING_LITERAL, m_data.mid(start, len));
+            return Token(T_STRING_LITERAL, m_queryReader.mid(start, len));
             Q_ASSERT(false);
         }
     }
@@ -2026,34 +1931,35 @@ Tokenizer::Token XQueryTokenizer::attributeAsRaw(const QChar sep,
                                                  QString &result)
 {
     bool inLiteral = aInLiteral;
-    const char otherSep = (sep == QLatin1Char('"') ? '\'' : '"');
+    const QChar otherSep = (sep == QLatin1Char('"') ? '\'' : '"');
 
     while(true)
     {
-        if (atEnd())
+        if(m_queryReader.atEnd())
             return T_END_OF_FILE;
 
-        if (peekCurrent() == sep.unicode())
+        if(m_queryReader.current() == sep)
         {
             if (inLiteral)
                 inLiteral = false;
             else
                 inLiteral = true;
 
-            if (peekAhead() == sep.unicode())
+            if(m_queryReader.peekAhead() == sep)
             {
                 /* The quoting mechanism was used. */
-                result.append(current());
-                m_pos += 2;
+                result.append(m_queryReader.current());
+                m_queryReader.consume(sep);
+                m_queryReader.consume(sep);
                 continue;
             }
             else
             {
                 /* Don't consume the separator, such that we
                  * return a token for it next time. */
-                if (m_pos == startPos)
+                if(m_queryReader.pos() == startPos)
                 {
-                    ++m_pos;
+                    m_queryReader.next();
                     setState(StartTag);
                     return Token(sep == QLatin1Char('"') ? T_QUOTE : T_APOS);
                 }
@@ -2065,13 +1971,13 @@ Tokenizer::Token XQueryTokenizer::attributeAsRaw(const QChar sep,
                 }
                 else
                 {
-                    result.append(current());
-                    ++m_pos;
+                    result.append(m_queryReader.current());
+                    m_queryReader.next();
                     continue;
                 }
             }
         }
-        else if (peekCurrent() == '&')
+        else if(m_queryReader.current() == '&')
         {
             const QString ret(tokenizeCharacterReference());
             if (ret.isNull())
@@ -2079,17 +1985,17 @@ Tokenizer::Token XQueryTokenizer::attributeAsRaw(const QChar sep,
             else
             {
                 result.append(ret);
-                ++m_pos;
+                m_queryReader.next();
                 continue;
             }
         }
-        else if (peekCurrent() == otherSep)
+       else if(m_queryReader.current() == otherSep)
         {
-            result.append(current());
-            ++m_pos;
+            result.append(m_queryReader.current());
+            m_queryReader.consume(otherSep);
 
-            if (peekCurrent() == otherSep)
-                ++m_pos;
+            if(m_queryReader.current() == otherSep)
+                m_queryReader.consume(otherSep);
 
             if (inLiteral)
                 inLiteral = false;
@@ -2098,52 +2004,70 @@ Tokenizer::Token XQueryTokenizer::attributeAsRaw(const QChar sep,
 
             continue;
         }
-        else if (peekCurrent() == '{')
+        else if(m_queryReader.current() == '{')
         {
-            result.append(current());
+            result.append(m_queryReader.current());
 
-            if (peekAhead() == '{')
+            if(m_queryReader.peekAhead() == '{')
             {
-                m_pos += 2;
+                m_queryReader.consume(QLatin1String("{{"));
                 continue;
             }
             else
             {
-                ++m_pos;
+                m_queryReader.consume('{');
                 ++sepStack;
                 const Token t(attributeAsRaw(sep, sepStack, startPos, false, result));
-                if (t.type != T_SUCCESS)
+                if(t.type != T_SUCCESS)
                     return t;
             }
 
         }
-        else if (peekCurrent() == '}')
+        else if(m_queryReader.current() == '}')
         {
-            if (inLiteral && peekAhead() == '}')
+            if(inLiteral && m_queryReader.peekAhead() == '}')
             {
-                result.append(current());
-                m_pos += 2;
+                result.append(m_queryReader.current());
+                m_queryReader.consume(QLatin1String("}}"));
                 continue;
             }
             else
             {
-                ++m_pos;
+                m_queryReader.consume('}');
                 --sepStack;
                 return Token(T_SUCCESS); /* The return value is arbitrary. */
             }
         }
         else
         {
-            result.append(current());
-            ++m_pos;
+            result.append(m_queryReader.current());
+            m_queryReader.next();
         }
     }
 }
 
 Tokenizer::Token XQueryTokenizer::nextToken(YYLTYPE *const sourceLocator)
 {
-    sourceLocator->first_line = m_line;
-    sourceLocator->first_column = m_pos - m_columnOffset + 1; /* Plus 1, since m_pos is 0-based. */
+    switch (state()) {
+		/* We want to skip or do special whitespace handling for these
+		* states. So fallthrough all of the following. */
+		case AposAttributeContent:
+		case Axis:
+		case ElementContent:
+		case EndTag:
+		case Pragma:
+		case PragmaContent:
+		case ProcessingInstructionName:
+		case QuotAttributeContent:
+		case StartTag:
+		case XMLComment:
+			break;
+		default:
+			handleWhitespace();
+	}
+
+	sourceLocator->first_line = m_queryReader.line();
+    sourceLocator->first_column = m_queryReader.column();
 
     if (m_tokenStack.isEmpty())
         return nextToken();
@@ -2187,13 +2111,13 @@ Tokenizer::Token XQueryTokenizer::nextToken(YYLTYPE *const sourceLocator)
 int XQueryTokenizer::commenceScanOnly()
 {
     m_scanOnly = true;
-    return m_pos;
+    return m_queryReader.pos();
 }
 
 void XQueryTokenizer::resumeTokenizationFrom(const int pos)
 {
     m_scanOnly = false;
-    m_pos = pos;
+    m_queryReader.setPos(pos);
 }
 
 void XQueryTokenizer::setParserContext(const ParserContext::Ptr &)
@@ -2201,6 +2125,54 @@ void XQueryTokenizer::setParserContext(const ParserContext::Ptr &)
 }
 
 #undef handleWhitespace
+
+XQueryTokenizer::QueryReader::QueryReader(const QString &query)
+    : m_data(query), m_pos(0), m_length(query.size())
+{
+    m_lines.append(0);
+
+    for (int i=1; i<m_length; i++) {
+        if (query[i-1] == '\n') {
+            m_lines.append(i);
+        }
+    }
+}
+
+int XQueryTokenizer::QueryReader::line() const
+{
+    return std::upper_bound(m_lines.begin(), m_lines.end(), m_pos) - m_lines.begin();
+}
+
+int XQueryTokenizer::QueryReader::column() const
+{
+    return m_pos - *(std::upper_bound(m_lines.begin(), m_lines.end(), m_pos) - 1) + 1;
+}
+
+const QChar XQueryTokenizer::QueryReader::peekAhead(const int length) const
+{
+    if (m_pos + length >= m_length || m_pos + length < 0)
+        return QChar();
+    else
+        return m_data.at(m_pos + length).toLatin1();
+}
+
+const QChar XQueryTokenizer::QueryReader::next()
+{
+    ++m_pos;
+    return current();
+}
+
+void XQueryTokenizer::QueryReader::consume(QChar c)
+{
+	Q_ASSERT(current() == c);
+	next();
+}
+
+void XQueryTokenizer::QueryReader::consume(const QString &chs)
+{
+    for (int i=0; i<chs.size(); i++)
+        consume(chs[i]);
+}
 
 } // namespace QPatternist
 

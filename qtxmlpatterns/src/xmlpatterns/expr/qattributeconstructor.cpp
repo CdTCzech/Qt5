@@ -77,7 +77,6 @@ Item AttributeConstructor::evaluateSingleton(const DynamicContext::Ptr &context)
     nodeBuilder->attribute(name, QStringRef(&value));
 
     const QAbstractXmlNodeModel::Ptr nm(nodeBuilder->builtDocument());
-    context->addNodeModel(nm);
     return nm->root(QXmlNodeModelIndex());
 }
 

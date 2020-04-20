@@ -113,8 +113,7 @@ namespace QPatternist
         enum CacheState
         {
             Full,
-            Empty,
-            PartiallyPopulated
+            Empty
         };
 
         inline ItemSequenceCacheCell() : cacheState(Empty)
@@ -123,7 +122,6 @@ namespace QPatternist
         }
 
         Item::List          cachedItems;
-        Item::Iterator::Ptr sourceIterator;
         CacheState          cacheState;
         /**
          * In XSL-T, we can have circularity which we cannot detect statically.

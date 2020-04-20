@@ -90,9 +90,9 @@ Item::Iterator::Ptr ForClause::evaluateSequence(const DynamicContext::Ptr &conte
 
     if(m_allowsMany)
     {
-        return makeSequenceMappingIterator<Item>(ConstPtr(this),
-                                                 source,
-                                                 context);
+        return makeSequenceMappingIterator<Item, Item>(ConstPtr(this),
+                                                       source,
+                                                       context);
     }
     else
     {

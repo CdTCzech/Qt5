@@ -97,8 +97,8 @@ Item StringJoinFN::evaluateSingleton(const DynamicContext::Ptr &context) const
     }
 
     return result.isEmpty()
-            ? toItem(CommonValues::EmptyString)
-            : toItem(AtomicString::fromValue(result));
+            ? Item(CommonValues::EmptyString)
+            : Item(AtomicString::fromValue(result));
 }
 
 Expression::Ptr StringJoinFN::compress(const StaticContext::Ptr &context)
@@ -178,7 +178,7 @@ Item NormalizeSpaceFN::evaluateSingleton(const DynamicContext::Ptr &context) con
     if(!arg)
         return CommonValues::EmptyString;
 
-    return toItem(AtomicString::fromValue(arg.stringValue().simplified()));
+    return Item(AtomicString::fromValue(arg.stringValue().simplified()));
 }
 
 Item NormalizeUnicodeFN::evaluateSingleton(const DynamicContext::Ptr &context) const
@@ -197,7 +197,7 @@ Item NormalizeUnicodeFN::evaluateSingleton(const DynamicContext::Ptr &context) c
     {
         normForm = determineNormalizationForm(context);
         if(normForm == -1)
-            return toItem(AtomicString::fromValue(arg.stringValue()));
+            return Item(AtomicString::fromValue(arg.stringValue()));
     }
 
     return AtomicString::fromValue(arg.stringValue().normalized(

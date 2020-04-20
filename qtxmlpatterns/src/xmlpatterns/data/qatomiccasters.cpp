@@ -76,7 +76,7 @@ Item ToUntypedAtomicCaster::castFrom(const Item &from,
 Item ToAnyURICaster::castFrom(const Item &from,
                               const QExplicitlySharedDataPointer<DynamicContext> &) const
 {
-    return toItem(AnyURI::fromLexical(from.stringValue()));
+    return Item(AnyURI::fromLexical(from.stringValue()));
 }
 
 Item Base64BinaryToHexBinaryCaster::castFrom(const Item &from,
@@ -212,7 +212,7 @@ Item StringToDurationCaster::castFrom(const Item &from,
 Item StringToDayTimeDurationCaster::castFrom(const Item &from,
                                              const QExplicitlySharedDataPointer<DynamicContext> &) const
 {
-    return toItem(DayTimeDuration::fromLexical(from.stringValue()));
+    return Item(DayTimeDuration::fromLexical(from.stringValue()));
 }
 
 Item AbstractDurationToDayTimeDurationCaster::castFrom(const Item &from,
@@ -220,7 +220,7 @@ Item AbstractDurationToDayTimeDurationCaster::castFrom(const Item &from,
 {
     const AbstractDuration *const val = from.as<AbstractDuration>();
 
-    return toItem(DayTimeDuration::fromComponents(val->isPositive(),
+    return Item(DayTimeDuration::fromComponents(val->isPositive(),
                                                   val->days(),
                                                   val->hours(),
                                                   val->minutes(),
@@ -233,7 +233,7 @@ Item AbstractDurationToYearMonthDurationCaster::castFrom(const Item &from,
 {
     const AbstractDuration *const val = from.as<AbstractDuration>();
 
-    return toItem(YearMonthDuration::fromComponents(val->isPositive(),
+    return Item(YearMonthDuration::fromComponents(val->isPositive(),
                                                     val->years(),
                                                     val->months()));
 }

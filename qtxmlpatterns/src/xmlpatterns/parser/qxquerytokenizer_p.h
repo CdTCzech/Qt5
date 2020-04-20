@@ -142,12 +142,6 @@ namespace QPatternist
         inline Token tokenizeNumberLiteral();
 
         /**
-         * @returns the character @p length characters from the current
-         * position.
-         */
-        inline char peekAhead(const int length = 1) const;
-
-        /**
          * @returns whether the stream, starting from @p offset from the
          * current position, matches @p chs. The length of @p chs is @p len.
          */
@@ -155,33 +149,13 @@ namespace QPatternist
                                 const int len,
                                 const int offset = 1) const;
 
+        inline bool aheadEquals(const QString &chs, int offset = 1) const;
+
         inline Token tokenizeNCName();
         static inline bool isOperatorKeyword(const TokenType);
 
-        static inline bool isDigit(const char ch);
         static inline Token error();
         inline TokenType consumeWhitespace();
-
-        /**
-         * @short Returns the character at the current position, converted to
-         * @c ASCII.
-         *
-         * Equivalent to calling:
-         *
-         * @code
-         * current().toLatin1();
-         * @endcode
-         */
-        inline char peekCurrent() const;
-
-        /**
-         * Disregarding encoding conversion, equivalent to calling:
-         *
-         * @code
-         * peekAhead(0);
-         * @endcode
-         */
-        inline const QChar current() const;
 
         /**
          * @p hadWhitespace is always set to a proper value.
@@ -207,7 +181,7 @@ namespace QPatternist
          * Returned is the length stretching from m_pos when starting, until
          * @p content is encountered. @p content is not included in the length.
          */
-        int scanUntil(const char *const content);
+        int scanUntil(const QString &content);
 
         /**
          * Same as calling:
@@ -263,11 +237,6 @@ namespace QPatternist
         static QString normalizeEOL(const QString &input,
                                     const CharacterSkips &characterSkips);
 
-        inline bool atEnd() const
-        {
-            return m_pos == m_length;
-        }
-
         Token nextToken();
         /**
          * Instead of recognizing and tokenizing embedded expressions in
@@ -290,28 +259,71 @@ namespace QPatternist
                              const bool inLiteral,
                              QString &result);
 
-        const QString           m_data;
-        const int               m_length;
+        class QueryReader {
+        public:
+            QueryReader(const QString &query);
+
+
+            const QChar current() const { return peekAhead(0); }
+
+            const QChar next();
+            void consume(QChar c);
+            void consume(const QString &chs);
+
+            /**
+             * @returns the character @p length characters from the current
+             * position.
+             */
+            const QChar peekAhead(const int length = 1) const;
+
+            /**
+             * The current line number.
+             *
+             * The line number and column number both starts at 1.
+             */
+            int line() const;
+
+            /**
+             * The current column number.
+             *
+             * The line number and column number both starts at 1.
+             */
+            int column() const;
+
+            int pos() const
+            {
+                return m_pos;
+            }
+
+            void setPos(int pos)
+            {
+                m_pos = pos;
+            }
+
+            void advance(int advance)
+            {
+                setPos(m_pos + advance);
+            }
+
+            QString mid(int position, int n = -1) const
+            {
+                return m_data.mid(position, n);
+            }
+
+            inline bool atEnd() const
+            {
+                return m_pos >= m_length;
+            }
+
+        private:
+            int                     m_pos;
+            int                     m_length;
+            const QString           m_data;
+            QVector<int>            m_lines;
+        } m_queryReader;
+
         State                   m_state;
         QStack<State>           m_stateStack;
-        int                     m_pos;
-
-        /**
-         * The current line number.
-         *
-         * The line number and column number both starts at 1.
-         */
-        int                     m_line;
-
-        /**
-         * The offset into m_length for where
-         * the current column starts. So m_length - m_columnOffset
-         * is the current column.
-         *
-         * The line number and column number both starts at 1.
-         */
-        int                     m_columnOffset;
-
         const NamePool::Ptr     m_namePool;
         QStack<Token>           m_tokenStack;
         QHash<QString, QChar>   m_charRefs;

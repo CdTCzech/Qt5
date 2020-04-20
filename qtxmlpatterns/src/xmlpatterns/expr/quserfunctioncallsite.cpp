@@ -77,7 +77,7 @@ void UserFunctionCallsite::evaluateToSequenceReceiver(const DynamicContext::Ptr 
 
 DynamicContext::Ptr UserFunctionCallsite::bindVariables(const DynamicContext::Ptr &context) const
 {
-    const DynamicContext::Ptr stackContext(context->createStack());
+    const DynamicContext::Ptr stackContext(context->createStack(m_functionDeclaration));
     Q_ASSERT(stackContext);
 
     const Expression::List::const_iterator end(m_operands.constEnd());

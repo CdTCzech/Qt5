@@ -78,7 +78,7 @@ Item RangeIterator::next()
     }
     else
     {
-        m_current = Integer::fromValue(m_count);
+        m_current = Item(Integer::fromValue(m_count));
         m_count += m_increment;
         ++m_position;
         return m_current;

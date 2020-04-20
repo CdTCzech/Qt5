@@ -97,7 +97,7 @@ Item NamespaceURIFN::evaluateSingleton(const DynamicContext::Ptr &context) const
         if(name.isNull())
             return CommonValues::EmptyAnyURI;
         else
-            return toItem(AnyURI::fromValue(context->namePool()->stringForNamespace(name.namespaceURI())));
+            return Item(AnyURI::fromValue(context->namePool()->stringForNamespace(name.namespaceURI())));
     }
     else
         return CommonValues::EmptyAnyURI;

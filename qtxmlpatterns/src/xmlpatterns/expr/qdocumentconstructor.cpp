@@ -63,7 +63,6 @@ Item DocumentConstructor::evaluateSingleton(const DynamicContext::Ptr &context) 
     validator.endDocument();
 
     const QAbstractXmlNodeModel::Ptr nm(nodeBuilder->builtDocument());
-    context->addNodeModel(nm);
 
     return nm->root(QXmlNodeModelIndex());
 }

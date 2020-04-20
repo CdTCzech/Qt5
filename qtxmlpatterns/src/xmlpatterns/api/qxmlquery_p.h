@@ -157,7 +157,7 @@ public:
         m_staticContext = genericStaticContext;
 
         if(!contextItem.isNull())
-            m_staticContext = QPatternist::StaticContext::Ptr(new QPatternist::StaticFocusContext(QPatternist::AtomicValue::qtToXDMType(contextItem), m_staticContext));
+            m_staticContext = QPatternist::StaticContext::Ptr(new QPatternist::StaticFocusContext(contextItem.toItem().type(), m_staticContext));
         else if(   queryLanguage == QXmlQuery::XmlSchema11IdentityConstraintField
                 || queryLanguage == QXmlQuery::XmlSchema11IdentityConstraintSelector
                 || queryLanguage == QXmlQuery::XPath20)
@@ -194,7 +194,7 @@ public:
         else
         {
             QPatternist::DynamicContext::Ptr focus(new QPatternist::Focus(dynContext));
-            QPatternist::Item::Iterator::Ptr it(QPatternist::makeSingletonIterator(QPatternist::Item::fromPublic(contextItem)));
+            QPatternist::Item::Iterator::Ptr it(QPatternist::makeSingletonIterator(contextItem.toItem()));
             it->next();
             focus->setFocusIterator(it);
             return focus;

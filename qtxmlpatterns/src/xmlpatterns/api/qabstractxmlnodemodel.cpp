@@ -49,6 +49,7 @@
 #include "qsequencemappingiterator_p.h"
 #include "qsingletoniterator_p.h"
 
+#include "qxmlitem.h"
 #include "qabstractxmlnodemodel.h"
 
 QT_BEGIN_NAMESPACE
@@ -449,8 +450,8 @@ namespace QPatternist
     public:
 
         inline
-        QXmlNodeModelIndexIteratorPointer
-        mapToSequence(const QXmlNodeModelIndexIteratorPointer &it,
+        QXmlNodeModelIndex::Iterator::Ptr
+        mapToSequence(const QXmlNodeModelIndex::Iterator::Ptr &it,
                       const DynamicContext::Ptr &) const
         {
             return it;
@@ -470,17 +471,17 @@ namespace QPatternist
      * iterators. Hence, we have this class which is specialized(not in the
      * template sense) on iterators, and hence copies them appropriately.
      */
-    class IteratorVector : public ListIterator<QXmlNodeModelIndexIteratorPointer, QVector<QXmlNodeModelIndexIteratorPointer> >
+    class IteratorVector : public ListIterator<QXmlNodeModelIndex::Iterator::Ptr, QVector<QXmlNodeModelIndex::Iterator::Ptr> >
     {
-        typedef QVector<QXmlNodeModelIndexIteratorPointer> ItVector;
+        typedef QVector<QXmlNodeModelIndex::Iterator::Ptr> ItVector;
     public:
-        typedef QAbstractXmlForwardIterator<QXmlNodeModelIndexIteratorPointer>::Ptr Ptr;
+        typedef QAbstractXmlForwardIterator<QXmlNodeModelIndex::Iterator::Ptr>::Ptr Ptr;
 
-        IteratorVector(const ItVector &in) : ListIterator<QXmlNodeModelIndexIteratorPointer, QVector<QXmlNodeModelIndexIteratorPointer> >(in)
+        IteratorVector(const ItVector &in) : ListIterator<QXmlNodeModelIndex::Iterator::Ptr, QVector<QXmlNodeModelIndex::Iterator::Ptr> >(in)
         {
         }
 
-        QAbstractXmlForwardIterator<QXmlNodeModelIndexIteratorPointer>::Ptr copy() const override
+        QAbstractXmlForwardIterator<QXmlNodeModelIndex::Iterator::Ptr>::Ptr copy() const override
         {
             ItVector result;
             const int count = m_list.count();
@@ -498,15 +499,16 @@ namespace QPatternist
  This function is not a private member of QAbstractXmlNodeModel
  because it would be messy to forward declare the required types.
 */
-static inline QXmlNodeModelIndexIteratorPointer mergeIterators(const QXmlNodeModelIndex &node,
-                                                               const QXmlNodeModelIndexIteratorPointer &it2)
+static inline QXmlNodeModelIndex::Iterator::Ptr mergeIterators(const QXmlNodeModelIndex &node,
+                                                               const QXmlNodeModelIndex::Iterator::Ptr &it2)
 {
-    QVector<QXmlNodeModelIndexIteratorPointer> iterators;
+    QVector<QXmlNodeModelIndex::Iterator::Ptr> iterators;
     iterators.reserve(2);
     iterators.append(makeSingletonIterator(node));
     iterators.append(it2);
 
-    return makeSequenceMappingIterator<QXmlNodeModelIndex>(&mergeIterator,
+    return makeSequenceMappingIterator<QXmlNodeModelIndex,
+                                       QXmlNodeModelIndex::Iterator::Ptr>(&mergeIterator,
                                                            IteratorVector::Ptr(new IteratorVector(iterators)),
                                                            DynamicContext::Ptr());
 }
@@ -517,7 +519,8 @@ QAbstractXmlNodeModel::mapToSequence(const QXmlNodeModelIndex &ni,
 {
     Q_ASSERT(!ni.isNull());
     /* Since we pass in this here, mapToSequence is used recursively. */
-    return mergeIterators(ni, makeSequenceMappingIterator<QXmlNodeModelIndex>(this,
+    return mergeIterators(ni, makeSequenceMappingIterator<QXmlNodeModelIndex,
+                                                          QXmlNodeModelIndex>(this,
                                                                               ni.iterate(QXmlNodeModelIndex::AxisChild),
                                                                               DynamicContext::Ptr()));
 }
@@ -575,7 +578,7 @@ QAbstractXmlNodeModel::mapToSequence(const QXmlNodeModelIndex &ni,
   \sa {http://www.w3.org/TR/xquery/#axes}{XQuery 1.0: An XML Query Language, 3.2.1.1 Axes}
   \sa {http://www.w3.org/TR/xpath-datamodel/}{W3CXQuery 1.0 and XPath 2.0 Data Model (XDM)}
  */
-QExplicitlySharedDataPointer<QAbstractXmlForwardIterator<QXmlNodeModelIndex> >
+QXmlNodeModelIndex::Iterator::Ptr
 QAbstractXmlNodeModel::iterate(const QXmlNodeModelIndex &ni,
                                QXmlNodeModelIndex::Axis axis) const
 {
@@ -685,7 +688,8 @@ QAbstractXmlNodeModel::iterate(const QXmlNodeModelIndex &ni,
         }
         case QXmlNodeModelIndex::AxisDescendant:
         {
-            return makeSequenceMappingIterator<QXmlNodeModelIndex>(this,
+            return makeSequenceMappingIterator<QXmlNodeModelIndex,
+                                               QXmlNodeModelIndex>(this,
                                                                    ni.iterate(QXmlNodeModelIndex::AxisChild),
                                                                    DynamicContext::Ptr());
         }
@@ -706,7 +710,7 @@ QAbstractXmlNodeModel::iterate(const QXmlNodeModelIndex &ni,
             /* We walk up along the ancestors, and for each parent, we grab its preceding/following
              * siblings, and evaluate the descendant axis. The descendant axes gets added
              * to a list and we then merge those iterators. */
-            QVector<QXmlNodeModelIndexIteratorPointer> descendantIterators;
+            QVector<QXmlNodeModelIndex::Iterator::Ptr> descendantIterators;
 
             QXmlNodeModelIndex current(ni);
             while(!current.isNull())
@@ -725,7 +729,8 @@ QAbstractXmlNodeModel::iterate(const QXmlNodeModelIndex &ni,
                 }
             }
 
-            return makeSequenceMappingIterator<QXmlNodeModelIndex>(&mergeIterator,
+            return makeSequenceMappingIterator<QXmlNodeModelIndex,
+                                               QXmlNodeModelIndex::Iterator::Ptr>(&mergeIterator,
                                                                    IteratorVector::Ptr(new IteratorVector(descendantIterators)),
                                                                    DynamicContext::Ptr());
         }
@@ -932,7 +937,7 @@ QPatternist::ItemIteratorPtr QAbstractXmlNodeModel::sequencedTypedValue(const QX
     if(candidate.isNull())
         return QPatternist::CommonValues::emptyIterator;
     else
-        return makeSingletonIterator(AtomicValue::toXDM(candidate));
+        return makeSingletonIterator(Item(AtomicValue::qtToXDM(candidate)));
 }
 
 /*!
@@ -1013,7 +1018,7 @@ bool QAbstractXmlNodeModel::isDeepEqual(const QXmlNodeModelIndex &n1,
     {
         case QXmlNodeModelIndex::Element:
         {
-            QXmlNodeModelIndexIteratorPointer atts1(n1.iterate(QXmlNodeModelIndex::AxisAttribute));
+            QXmlNodeModelIndex::Iterator::Ptr atts1(n1.iterate(QXmlNodeModelIndex::AxisAttribute));
             QXmlNodeModelIndex node(atts1->next());
 
             const QXmlNodeModelIndex::List atts2(n2.iterate(QXmlNodeModelIndex::AxisAttribute)->toList());
@@ -1039,8 +1044,8 @@ bool QAbstractXmlNodeModel::isDeepEqual(const QXmlNodeModelIndex &n1,
         }
         case QXmlNodeModelIndex::Document:
         {
-            QXmlNodeModelIndexIteratorPointer itn1(n1.iterate(QXmlNodeModelIndex::AxisChild));
-            QXmlNodeModelIndexIteratorPointer itn2(n2.iterate(QXmlNodeModelIndex::AxisChild));
+            QXmlNodeModelIndex::Iterator::Ptr itn1(n1.iterate(QXmlNodeModelIndex::AxisChild));
+            QXmlNodeModelIndex::Iterator::Ptr itn2(n2.iterate(QXmlNodeModelIndex::AxisChild));
 
             while(true)
             {
@@ -1078,472 +1083,6 @@ bool QAbstractXmlNodeModel::isDeepEqual(const QXmlNodeModelIndex &n1,
 
     return false;
 }
-
-/*!
-  \class QXmlItem
-  \reentrant
-  \since 4.4
-  \brief The QXmlItem class contains either an XML node or an atomic value.
-  \ingroup xml-tools
-  \inmodule QtXmlPatterns
-
-  In XQuery, all expressions evaluate to a sequence of items, where
-  each item is either an XML node or an atomic value. The query in the
-  following snippet evaluates to sequence of five items.
-
-  \quotefile patternist/items.xq
-
-  The five items are: An element, an atomic value (binary data encoded
-  in base64), a date, a float, and an attribute.
-
-  QXmlItem is the class that represents these XQuery items in the
-  Qt XML Patterns API. A non-null instance of QXmlItem is either a node
-  or an atomic value. Calling isNode() or isAtomicValue() tells you
-  which it is. Atomic values are represented elsewhere in the Qt API
-  as instances of QVariant, and an instance of QXmlItem that
-  represents an atomic value can be converted to a QVariant by calling
-  toAtomicValue(). A QXmlItem that wraps a node is represented
-  elsewhere as an instance of QXmlNodeModelIndex. A node QXmlItem can
-  be converted to a QXmlNodeModelIndex by calling toNodeModelIndex().
-
-  A default constructed QXmlItem instance is neither a node nor an
-  atomic value. It is considered null, in which case isNull() returns
-  true.
-
-  An instance of QXmlItem will be left dangling if the
-  \l{QAbstractXmlNodeModel} {XML node model} it
-  refers to is deleted, if it is a QXmlNodeModelIndex.
- */
-
-/*!
-  \typedef QXmlItem::Iterator
-  A QAbstractXmlForwardIterator over QXmlItem.
- */
-
-/*!
-  Constructs a null QXmlItem that is neither a node nor an atomic
-  value. isNull() returns true for a default constructed instance.
- */
-QXmlItem::QXmlItem()
-{
-    m_node.reset();
-}
-
-bool QXmlItem::internalIsAtomicValue() const
-{
-    return m_node.model == reinterpret_cast<QAbstractXmlNodeModel *>(~0);
-}
-
-/*!
-  The copy constructor constructs a copy of \a other.
- */
-QXmlItem::QXmlItem(const QXmlItem &other) : m_node(other.m_node)
-{
-    if(internalIsAtomicValue())
-        m_atomicValue->ref.ref();
-}
-
-/*!
-  Constructs an atomic value QXmlItem with \a atomicValue.
-
-  \sa isAtomicValue()
- */
-QXmlItem::QXmlItem(const QVariant &atomicValue)
-{
-    m_node.reset();
-    if(atomicValue.isNull())
-    {
-        /* Then we behave just like the default constructor. */
-        return;
-    }
-
-    /*
-      We can't assign directly to m_atomicValue, because the
-      temporary will self-destruct before we've ref'd it.
-    */
-    const QPatternist::Item temp(QPatternist::AtomicValue::toXDM(atomicValue));
-
-    if(temp)
-    {
-        temp.asAtomicValue()->ref.ref();
-        m_node.model = reinterpret_cast<const QAbstractXmlNodeModel *>(~0);
-        m_atomicValue = temp.asAtomicValue();
-    }
-    else
-    {
-        m_atomicValue = 0;
-    }
-}
-
-/*!
-  Constructs a node QXmlItem that is a copy of \a node.
-
-  \sa isNode()
- */
-QXmlItem::QXmlItem(const QXmlNodeModelIndex &node) : m_node(node.m_storage)
-{
-}
-
-
-/*!
-  Destructor.
- */
-QXmlItem::~QXmlItem()
-{
-    if(internalIsAtomicValue() && !m_atomicValue->ref.deref())
-        delete m_atomicValue;
-}
-
-bool QPatternist::NodeIndexStorage::operator!=(const NodeIndexStorage &other) const
-{
-    return data != other.data
-           || additionalData != other.additionalData
-           || model != other.model;
-}
-
-/*!
-  Assigns \a other to \c this.
- */
-QXmlItem &QXmlItem::operator=(const QXmlItem &other)
-{
-    if(m_node != other.m_node)
-    {
-        if(internalIsAtomicValue() && !m_atomicValue->ref.deref())
-            delete m_atomicValue;
-
-        m_node = other.m_node;
-
-        if(internalIsAtomicValue())
-            m_atomicValue->ref.ref();
-    }
-
-    return *this;
-}
-
-/*!
-  Returns true if this item is a Node. Returns false if it
-  is an atomic value or null.
-
-  \sa isNull(), isAtomicValue()
- */
-bool QXmlItem::isNode() const
-{
-    return QPatternist::Item::fromPublic(*this).isNode();
-}
-
-/*!
-  Returns true if this item is an atomic value. Returns false
-  if it is a node or null.
-
-  \sa isNull(), isNode()
- */
-bool QXmlItem::isAtomicValue() const
-{
-    return internalIsAtomicValue();
-}
-
-/*!
-  If this QXmlItem represents an atomic value, it is converted
-  to an appropriate QVariant and returned. If this QXmlItem is
-  not an atomic value, the return value is a default constructed
-  QVariant. You can call isAtomicValue() to test whether the
-  item is an atomic value.
-
- \sa isAtomicValue()
- */
-QVariant QXmlItem::toAtomicValue() const
-{
-    if(isAtomicValue())
-        return QPatternist::AtomicValue::toQt(m_atomicValue);
-    else
-        return QVariant();
-}
-
-/*!
-  If this QXmlItem represents a node, it returns the item as a
-  QXmlNodeModelIndex. If this QXmlItem is not a node, the return
-  value is undefined. You can call isNode() to test whether the
-  item is a node.
-
- \sa isNode()
- */
-QXmlNodeModelIndex QXmlItem::toNodeModelIndex() const
-{
-    if(isNode())
-        return reinterpret_cast<const QXmlNodeModelIndex &>(m_node);
-    else
-        return QXmlNodeModelIndex();
-}
-
-/*!
-  Returns true if this QXmlItem is neither a node nor an
-  atomic value. Default constructed instances of QXmlItem
-  are null.
- */
-bool QXmlItem::isNull() const
-{
-    return !m_node.model;
-}
-
-/*!
-  \class QXmlNodeModelIndex
-  \brief The QXmlNodeModelIndex class identifies a node in an XML node model subclassed from QAbstractXmlNodeModel.
-  \reentrant
-  \since 4.4
-  \ingroup xml-tools
-  \inmodule QtXmlPatterns
-
-  QXmlNodeModelIndex is an index into an \l{QAbstractXmlNodeModel}
-  {XML node model}. It contains:
-
-  \list
-    \li A pointer to an \l{QAbstractXmlNodeModel} {XML node model},
-    which is returned by model(), and
-    \li Some data, which is returned by data(), internalPointer(),
-    and additionalData().
-  \endlist
-
-  Because QXmlNodeModelIndex is intentionally a simple class, it
-  doesn't have member functions for accessing the properties of
-  nodes. For example, it doesn't have functions for getting a
-  node's name or its list of attributes or child nodes. If you find
-  that you need to retrieve this kind of information from your
-  query results, there are two ways to proceed.
-
-  \list
-
-  \li Send the output of your XQuery to an \l{QAbstractXmlReceiver}
-  {XML receiver}, or
-
-  \li Let your XQuery do all the work to produce the desired result.
-
-  \endlist
-
-  The second case is explained by example. Suppose you want to
-  populate a list widget with the values of certain attributes from a
-  set of result elements. You could write an XQuery to return the set
-  of elements, and then you would write the code to iterate over the
-  result elements, get their attributes, and extract the desired
-  string values. But the simpler way is to just augment your XQuery to
-  finding the desired attribute values. Then all you have to do is
-  evaluate the XQuery using the version of QXmlQuery::evaluateTo()
-  that populates a QStringList, which you can send directly to your
-  widget.
-
-  QXmlNodeModelIndex doesn't impose any restrictions on the \c data
-  value an QXmlNodeModelIndex should contain. The meaning of the data
-  left to the associated \l {QAbstractXmlNodeModel} {node model}.
-  Because QXmlNodeModelIndex depends on a particular subclass of
-  QAbstractXmlNodeModel for its existence, the only way you can create
-  an instance of QXmlNodeModelIndex is by asking the node model to
-  create one for you with QAbstractXmlNodeModel::createIndex(). Since
-  that function is protected, it is usually a good idea to write a
-  public function that creates a QXmlNodeModelIndex from arguments that
-  are appropriate for your particular node model.
-
-  A default constructed node index is said to be null, i.e., isNull()
-  returns true.
-
-  QXmlNodeModelIndex and QAbstractXmlNodeModel follow the same design
-  pattern used for QModelIndex and QAbstractItemModel.
- */
-
-/*!
-  \since 4.4
-  \relates QHash
-
-  Computes a hash key from the QXmlNodeModelIndex \a index, and
-  returns it. This function would be used by QHash if you wanted
-  to build a hash table for instances of QXmlNodeModelIndex.
-
-  The hash is computed on QXmlNodeModelIndex::data(),
-  QXmlNodeModelIndex::additionalData(), and
-  QXmlNodeModelIndex::model(). This means the hash key can be used for
-  node indexes from different node models.
- */
-uint qHash(const QXmlNodeModelIndex &index)
-{
-    return uint(index.data() + index.additionalData() + quintptr(index.model()));
-}
-
-/*!
-  \enum QXmlNodeModelIndex::NodeKind
-
-  Identifies a kind of node.
-
-  \value Attribute Identifies an attribute node
-  \value Text Identifies a text node
-  \value Comment Identifies a comment node
-  \value Document Identifies a document node
-  \value Element Identifies an element node
-  \value Namespace Identifies a namespace node
-  \value ProcessingInstruction Identifies a processing instruction.
-
-  Note that the optional XML declaration at very beginning of the XML
-  document is not a processing instruction
-
-  \sa QAbstractXmlNodeModel::kind()
-*/
-
-/*!
- \typedef QXmlNodeModelIndex::List
-
- Typedef for QList<QXmlNodeModelIndex>.
- */
-
-/*!
-  Returns true if this node is the same as \a other. This operator
-  does not compare values, children, or names of nodes. It compares
-  node identities, i.e., whether two nodes are from the same document
-  and are found at the exact same place.
- */
-bool QXmlNodeModelIndex::operator==(const QXmlNodeModelIndex &other) const
-{
-    return !(m_storage != other.m_storage);
-}
-
-/*!
-  Returns true if \a other is the same node as this.
- */
-bool QXmlNodeModelIndex::operator!=(const QXmlNodeModelIndex &other) const
-{
-    return !(operator==(other));
-}
-
-/*!
- \fn QXmlNodeModelIndex::QXmlNodeModelIndex()
-
- Default constructor. Creates an item that is \c null.
-
- \sa isNull()
- */
-
-/*!
- \fn QXmlNodeModelIndex::QXmlNodeModelIndex(const QXmlNodeModelIndex &other)
-
- Standard copy constructor. Creates a QXmlNodeModelIndex instance that
- is a copy of \a other.
- */
-
-/*!
- \fn bool QXmlNodeModelIndex::isNull() const
-
- Returns true if this QXmlNodeModelIndex is a default constructed
- value, otherwise false.
-
- A null QXmlNodeModelIndex doesn't represent any node and cannot
- be used in conjunction with QAbstractXmlNodeModel.
- */
-
-/*!
- \fn const QAbstractXmlNodeModel *QXmlNodeModelIndex::model() const
-
- Returns the QAbstractXmlNodeModel that this node index refers to.
- QXmlNodeModelIndex does not own QAbstractXmlNodeModel and does not
- keep track of its lifetime, so this pointer will dangle if the
- QAbstractXmlNodeModel is deallocated first.
-
- There is no setter for the node model because instances of
- QXmlNodeModelIndex instances are only created with
- QAbstractXmlNodeModel::createIndex().
-*/
-
-/*!
- \fn qint64 QXmlNodeModelIndex::data() const
-
- Returns the first data value. The node index holds two data values.
- additionalData() returns the second one.
-
- \sa additionalData()
-*/
-
-/*!
- \fn void *QXmlNodeModelIndex::internalPointer() const
-
- Returns the first data value as a void* pointer.
-
- \sa additionalData()
-*/
-
-/*!
- \fn qint64 QXmlNodeModelIndex::additionalData() const
-
- Returns the second data value. The node index holds two data values.
- data() returns the first one.
-
- \sa data()
-*/
-
-/*!
- \fn void QXmlNodeModelIndex::reset()
- \internal
-
- Resets this QXmlNodeModelIndex to be null. It is equivalent to
- writing:
-
- \snippet code/src_xmlpatterns_api_qabstractxmlnodemodel.cpp 0
- */
-
-/*!
- \fn QXmlName QXmlNodeModelIndex::name() const
- \internal
-*/
-
-/*!
- \typedef QXmlNodeModelIndex::Iterator
- \internal
-
- Typedef for QAbstractXmlForwardIterator<QXmlNodeModelIndex>.
- */
-/*!
- \fn QXmlNodeModelIndex QXmlNodeModelIndex::root() const
- \internal
-*/
-
-/*!
- \fn QExplicitlySharedDataPointer<QAbstractXmlForwardIterator<QXmlNodeModelIndex> > QXmlNodeModelIndex::iterate(const Axis axis) const
- \internal
-*/
-
-/*!
- \fn QExplicitlySharedDataPointer<QAbstractXmlForwardIterator<QPatternist::Item> > QXmlNodeModelIndex::sequencedTypedValue() const
- \internal
-*/
-
-/*!
- \fn QUrl QXmlNodeModelIndex::documentUri() const
- \internal
-*/
-
-/*!
- \fn QUrl QXmlNodeModelIndex::baseUri() const
- \internal
-*/
-
-/*!
- \fn NodeKind QXmlNodeModelIndex::kind() const
- \internal
-*/
-
-/*!
- \fn bool QXmlNodeModelIndex::isDeepEqual(const QXmlNodeModelIndex &other) const
- \internal
-*/
-
-/*!
- \fn DocumentOrder QXmlNodeModelIndex::compareOrder(const QXmlNodeModelIndex &other) const
- \internal
-*/
-
-/*!
- \fn void QXmlNodeModelIndex::sendNamespaces(QAbstractXmlReceiver *const receiver) const
- \internal
-*/
-
-/*!
- \fn QVector<QXmlName> QXmlNodeModelIndex::namespaceBindings() const
- \internal
-*/
 
 /*!
  \fn QXmlNodeModelIndex QAbstractXmlNodeModel::elementById(const QXmlName &id) const

@@ -8,6 +8,7 @@ HEADERS += $$PWD/qcurrentitemcontext_p.h            \
            $$PWD/qreceiverdynamiccontext_p.h        \
            $$PWD/qreportcontext_p.h                 \
            $$PWD/qstackcontextbase_p.h              \
+           $$PWD/qstackcontext_p.h                  \
            $$PWD/qstaticbaseuricontext_p.h          \
            $$PWD/qstaticcontext_p.h                 \
            $$PWD/qstaticcurrentcontext_p.h          \
@@ -24,6 +25,7 @@ SOURCES += $$PWD/qcurrentitemcontext.cpp            \
            $$PWD/qgenericstaticcontext.cpp          \
            $$PWD/qreceiverdynamiccontext.cpp        \
            $$PWD/qreportcontext.cpp                 \
+           $$PWD/qstackcontext.cpp                  \
            $$PWD/qstaticbaseuricontext.cpp          \
            $$PWD/qstaticcontext.cpp                 \
            $$PWD/qstaticcurrentcontext.cpp          \

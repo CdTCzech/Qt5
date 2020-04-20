@@ -39,6 +39,7 @@
 
 #include <QStack>
 #include <QStringList>
+#include <QSharedData>
 
 #include "qanyuri_p.h"
 #include "qboolean_p.h"
@@ -46,6 +47,7 @@
 #include "qcommonvalues_p.h"
 #include "qemptysequence_p.h"
 #include "qitemmappingiterator_p.h"
+#include "qsequencemappingiterator_p.h"
 #include "qnodesort_p.h"
 #include "qpatternistlocale_p.h"
 #include "private/qxmlutils_p.h"
@@ -61,9 +63,9 @@ IdFN::IdFN() : m_hasCreatedSorter(false)
 }
 
 Item IdFN::mapToItem(const QString &id,
-                     const IDContext &context) const
+                     const IdContext &context) const
 {
-    return context.second->elementById(context.first->namePool()->allocateQName(QString(), id));
+    return context.second->elementById(id);
 }
 
 /**
@@ -169,12 +171,9 @@ Item::Iterator::Ptr IdFN::evaluateSequence(const DynamicContext::Ptr &context) c
 
     checkTargetNode(node.asNode(), context, ReportContext::FODC0001);
 
-    return makeItemMappingIterator<Item,
-                                   QString,
-                                   IdFN::ConstPtr,
-                                   IDContext>(ConstPtr(this),
-                                              StringSplitter::Ptr(new StringSplitter(idrefs)),
-                                              qMakePair(context, node.asNode().model()));
+    return makeItemMappingIterator<Item>(ConstPtr(this),
+                                         StringSplitter::Ptr(new StringSplitter(idrefs)),
+                                         qMakePair(context, QAbstractXmlNodeModel::ConstPtr(node.asNode().model())));
 }
 
 Expression::Ptr IdFN::typeCheck(const StaticContext::Ptr &context,
@@ -191,18 +190,30 @@ Expression::Ptr IdFN::typeCheck(const StaticContext::Ptr &context,
     }
 }
 
+Item::Iterator::Ptr IdrefFN::mapToSequence(const QString &id, const IdrefContext &context) const
+{
+    QVector<QXmlNodeModelIndex> nodesByIdref = context.second->nodesByIdref(id);
+    QList<Item> items;
+
+    for (QVector<QXmlNodeModelIndex>::const_iterator it = nodesByIdref.begin(); it != nodesByIdref.end(); ++it) {
+        items.append(*it);
+    }
+
+    return makeListIterator(items);
+}
+
 Item::Iterator::Ptr IdrefFN::evaluateSequence(const DynamicContext::Ptr &context) const
 {
     const Item::Iterator::Ptr ids(m_operands.first()->evaluateSequence(context));
-
-    Item mId(ids->next());
-    if(!mId)
-        return CommonValues::emptyIterator;
-
     const Item node(m_operands.last()->evaluateSingleton(context));
+    
     checkTargetNode(node.asNode(), context, ReportContext::FODC0001);
 
-    return CommonValues::emptyIterator; /* TODO Haven't implemented further. */
+    StringSplitter::Ptr source(new StringSplitter(ids));
+
+    return makeSequenceMappingIterator<Item, QString>(ConstPtr(this),
+                                                      source,
+                                                      qMakePair(context, QAbstractXmlNodeModel::ConstPtr(node.asNode().model())));
 }
 
 Item DocFN::evaluateSingleton(const DynamicContext::Ptr &context) const

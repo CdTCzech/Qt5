@@ -55,6 +55,7 @@
 #include <private/qunlimitedcontainer_p.h>
 #include <private/quserfunction_p.h>
 #include <private/qvariabledeclaration_p.h>
+#include <private/qfunctionsignature_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -153,6 +154,8 @@ namespace QPatternist
          */
         Expression::Ptr                 m_body;
         UserFunction::Ptr               m_functionDeclaration;
+
+        friend QString formatFunction(const NamePool::Ptr &np, const UserFunctionCallsite::Ptr &func);
     };
 
     /**
@@ -160,14 +163,16 @@ namespace QPatternist
      *
      * @relates UserFunctionCallsite
      */
-    static inline QString formatFunction(const UserFunctionCallsite::Ptr &func)
+    static inline QString formatFunction(const NamePool::Ptr &np, const UserFunctionCallsite::Ptr &func)
     {
-        Q_UNUSED(func);
-        // TODO TODO TODO
-        // TODO Make UserFunctionCallsite always use a FunctionSignature
-        return QLatin1String("<span class='XQuery-function'>")  +
-               QString() +
-               //escape(func->name()->toString())                 +
+        QString signature = QLatin1String("[unknown]");
+        if (func && func->m_functionDeclaration && func->m_functionDeclaration->signature()) {
+            signature = formatFunction(np, func->m_functionDeclaration->signature());
+        } else if (func) {
+            signature = np->displayName(func->name());
+        }
+        return QLatin1String("<span class='XQuery-function'>") +
+               escape(signature) +
                QLatin1String("</span>");
     }
 }

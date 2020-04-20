@@ -154,11 +154,6 @@ QSourceLocation GenericDynamicContext::locationFor(const SourceLocationReflectio
     return m_locations.value(reflection->actualReflection());
 }
 
-void GenericDynamicContext::addNodeModel(const QAbstractXmlNodeModel::Ptr &nm)
-{
-    m_nodeModels.append(nm);
-}
-
 const QAbstractUriResolver *GenericDynamicContext::uriResolver() const
 {
     return m_uriResolver;
@@ -198,6 +193,11 @@ DynamicContext::Ptr GenericDynamicContext::previousContext() const
 QExplicitlySharedDataPointer<TemplateMode> GenericDynamicContext::currentTemplateMode() const
 {
     return QExplicitlySharedDataPointer<TemplateMode>();
+}
+
+QString GenericDynamicContext::callStack() const
+{
+    return QLatin1String("[global]");
 }
 
 QT_END_NAMESPACE

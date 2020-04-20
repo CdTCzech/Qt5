@@ -68,7 +68,7 @@ namespace QPatternist
 
         inline Item inputToOutputItem(const QVariant &inputType) const
         {
-            return AtomicValue::toXDM(inputType);
+            return Item(AtomicValue::qtToXDM(inputType));
         }
     };
 
@@ -86,31 +86,6 @@ namespace QPatternist
         {
             return AtomicString::fromValue(inputType);
         }
-    };
-
-    /**
-     * Takes two DynamicContext instances, and redirects the storage of temporary trees
-     * to one of them.
-     *
-     * @since 4.5
-     */
-    class TemporaryTreesRedirectingContext : public DelegatingDynamicContext
-    {
-    public:
-        TemporaryTreesRedirectingContext(const DynamicContext::Ptr &other,
-                                         const DynamicContext::Ptr &modelStorage) : DelegatingDynamicContext(other)
-                                                                                  , m_modelStorage(modelStorage)
-        {
-            Q_ASSERT(m_modelStorage);
-        }
-
-        void addNodeModel(const QAbstractXmlNodeModel::Ptr &nodeModel) override
-        {
-            m_modelStorage->addNodeModel(nodeModel);
-        }
-
-    private:
-        const DynamicContext::Ptr m_modelStorage;
     };
 }
 
@@ -134,7 +109,7 @@ SequenceType::Ptr VariableLoader::announceExternalVariable(const QXmlName name,
     }
     else
     {
-        return makeGenericSequenceType(AtomicValue::qtToXDMType(qvariant_cast<QXmlItem>(variant)),
+        return makeGenericSequenceType(qvariant_cast<QXmlItem>(variant).toItem().type(),
                                        Cardinality::exactlyOne());
     }
 }
@@ -142,6 +117,7 @@ SequenceType::Ptr VariableLoader::announceExternalVariable(const QXmlName name,
 Item::Iterator::Ptr VariableLoader::evaluateSequence(const QXmlName name,
                                                      const DynamicContext::Ptr &context)
 {
+    Q_UNUSED(context);
 
     const QVariant &variant = m_bindingHash.value(name);
     Q_ASSERT_X(!variant.isNull(), Q_FUNC_INFO,
@@ -154,7 +130,7 @@ Item::Iterator::Ptr VariableLoader::evaluateSequence(const QXmlName name,
     {
         const QXmlQuery variableQuery(qvariant_cast<QXmlQuery>(variant));
 
-        return variableQuery.d->expression()->evaluateSequence(DynamicContext::Ptr(new TemporaryTreesRedirectingContext(variableQuery.d->dynamicContext(), context)));
+        return variableQuery.d->expression()->evaluateSequence(variableQuery.d->dynamicContext());
     }
 
     const QVariant v(qvariant_cast<QXmlItem>(variant).toAtomicValue());
@@ -180,7 +156,7 @@ Item VariableLoader::itemForName(const QXmlName &name) const
     const QXmlItem item(qvariant_cast<QXmlItem>(variant));
 
     if(item.isNode())
-        return Item::fromPublic(item);
+        return item.toItem();
     else
     {
         const QVariant atomicValue(item.toAtomicValue());
@@ -190,7 +166,7 @@ Item VariableLoader::itemForName(const QXmlName &name) const
         if(atomicValue.isNull())
             return Item(AnyURI::fromValue(QLatin1String("tag:trolltech.com,2007:QtXmlPatterns:QIODeviceVariable:") + m_namePool->stringForLocalName(name.localName())));
         else
-            return AtomicValue::toXDM(atomicValue);
+            return Item(AtomicValue::qtToXDM(atomicValue));
     }
 }
 

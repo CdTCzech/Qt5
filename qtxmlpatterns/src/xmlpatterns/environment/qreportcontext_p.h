@@ -2433,13 +2433,14 @@ namespace QPatternist
          * when uriResolver() is @c null.
          */
         virtual const QAbstractUriResolver *uriResolver() const = 0;
+        virtual QString callStack() const;
 
     private:
         void createError(const QString &description,
                          const QtMsgType type,
                          const QUrl &id,
                          const QSourceLocation &sourceLocation) const;
-        static inline QString finalizeDescription(const QString &desc);
+        QString finalizeDescription(const QString &desc) const;
         QSourceLocation lookupSourceLocation(const SourceLocationReflection *const ref) const;
 
         Q_DISABLE_COPY(ReportContext)

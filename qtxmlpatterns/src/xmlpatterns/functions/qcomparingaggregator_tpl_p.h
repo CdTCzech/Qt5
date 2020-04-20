@@ -69,14 +69,14 @@ ComparingAggregator<oper, result>::applyNumericPromotion(const Item &old,
     if(!(BuiltinTypes::numeric->xdtTypeMatches(to) && BuiltinTypes::numeric->xdtTypeMatches(tn)))
         return newVal; /* At least one of them isn't numeric. */
     else if(BuiltinTypes::xsDouble->xdtTypeMatches(to) || BuiltinTypes::xsDouble->xdtTypeMatches(tn))
-        return toItem(Double::fromValue(newVal.as<Numeric>()->toDouble()));
+        return Item(Double::fromValue(newVal.as<Numeric>()->toDouble()));
     else if(BuiltinTypes::xsFloat->xdtTypeMatches(to) || BuiltinTypes::xsFloat->xdtTypeMatches(tn))
-        return toItem(Float::fromValue(newVal.as<Numeric>()->toDouble()));
+        return Item(Float::fromValue(newVal.as<Numeric>()->toDouble()));
     else if(BuiltinTypes::xsInteger->xdtTypeMatches(to) &&
             BuiltinTypes::xsInteger->xdtTypeMatches(tn))
         return newVal; /* Both must be xs:integer. */
     else
-        return toItem(Decimal::fromValue(newVal.as<Numeric>()->toDecimal()));
+        return Item(Decimal::fromValue(newVal.as<Numeric>()->toDecimal()));
 }
 
 template <AtomicComparator::Operator oper, AtomicComparator::ComparisonResult result>

@@ -131,12 +131,12 @@ QVector<QXmlName> XsdValidatedXmlNodeModel::namespaceBindings(const QXmlNodeMode
     return m_internalModel->namespaceBindings(index);
 }
 
-QXmlNodeModelIndex XsdValidatedXmlNodeModel::elementById(const QXmlName &name) const
+QXmlNodeModelIndex XsdValidatedXmlNodeModel::elementById(const QString &name) const
 {
     return m_internalModel->elementById(name);
 }
 
-QVector<QXmlNodeModelIndex> XsdValidatedXmlNodeModel::nodesByIdref(const QXmlName &name) const
+QVector<QXmlNodeModelIndex> XsdValidatedXmlNodeModel::nodesByIdref(const QString &name) const
 {
     return m_internalModel->nodesByIdref(name);
 }

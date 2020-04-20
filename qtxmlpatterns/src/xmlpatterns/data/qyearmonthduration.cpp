@@ -130,11 +130,11 @@ AbstractDuration::Value YearMonthDuration::value() const
 Item YearMonthDuration::fromValue(const Value val) const
 {
     if(val == 0)
-        return toItem(CommonValues::YearMonthDurationZero);
+        return Item(CommonValues::YearMonthDurationZero);
     else
     {
         const Value absValue = qAbs(val);
-        return toItem(YearMonthDuration::fromComponents(val >= 0,
+        return Item(YearMonthDuration::fromComponents(val >= 0,
                                                         absValue / 12,
                                                         absValue % 12));
     }

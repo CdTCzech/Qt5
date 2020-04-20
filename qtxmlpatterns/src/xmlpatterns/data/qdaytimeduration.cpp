@@ -190,9 +190,9 @@ AbstractDuration::Value DayTimeDuration::value() const
 Item DayTimeDuration::fromValue(const Value val) const
 {
     if(val == 0)
-        return toItem(CommonValues::DayTimeDurationZero);
+        return Item(CommonValues::DayTimeDurationZero);
     else
-        return toItem(fromSeconds(val / 1000, qAbs(val) % 1000));
+        return Item(fromSeconds(val / 1000, qAbs(val) % 1000));
 }
 
 ItemType::Ptr DayTimeDuration::type() const

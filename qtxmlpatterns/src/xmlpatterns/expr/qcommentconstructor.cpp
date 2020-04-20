@@ -83,7 +83,6 @@ Item CommentConstructor::evaluateSingleton(const DynamicContext::Ptr &context) c
     nodeBuilder->comment(content);
 
     const QAbstractXmlNodeModel::Ptr nm(nodeBuilder->builtDocument());
-    context->addNodeModel(nm);
 
     return nm->root(QXmlNodeModelIndex());
 }

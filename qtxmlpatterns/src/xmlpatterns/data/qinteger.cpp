@@ -47,9 +47,9 @@ QT_BEGIN_NAMESPACE
 
 using namespace QPatternist;
 
-Item Integer::fromValue(const xsInteger num)
+Integer::Ptr Integer::fromValue(const xsInteger num)
 {
-    return toItem(Integer::Ptr(new Integer(num)));
+    return Integer::Ptr(new Integer(num));
 }
 
 AtomicValue::Ptr Integer::fromLexical(const QString &strNumeric)

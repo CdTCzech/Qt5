@@ -41,6 +41,8 @@
 #include "qgenericsequencetype_p.h"
 #include "qitemmappingiterator_p.h"
 #include "qpatternistlocale_p.h"
+#include "qdelegatingabstractxmlreceiver_p.h"
+#include "qdelegatingdynamiccontext_p.h"
 
 #include "qitemverifier_p.h"
 
@@ -98,6 +100,61 @@ Item::Iterator::Ptr ItemVerifier::evaluateSequence(const DynamicContext::Ptr &co
     return makeItemMappingIterator<Item>(ConstPtr(this),
                                          m_operand->evaluateSequence(context),
                                          context);
+}
+
+class ItemVerifier::VerifierSequenceReceiver : public DelegatingAbstractXmlReceiver{
+public:
+    VerifierSequenceReceiver(const ItemVerifier *verifier, const DynamicContext::Ptr &context, QAbstractXmlReceiver *receiver)
+        : DelegatingAbstractXmlReceiver(receiver), m_verifier(verifier), m_context(context), m_nestedItem(0)
+    {}
+
+    virtual void startElement(const QXmlName &name)
+    {
+        ++m_nestedItem;
+        DelegatingAbstractXmlReceiver::startElement(name);
+    }
+
+    virtual void endElement()
+    {
+        DelegatingAbstractXmlReceiver::endElement();
+        --m_nestedItem;
+    }
+
+    virtual void item(const QPatternist::Item &item)
+    {
+        if (!m_nestedItem) {
+            m_verifier->verifyItem(item, m_context);
+        }
+        ++m_nestedItem;
+        DelegatingAbstractXmlReceiver::item(item);
+        --m_nestedItem;
+    }
+
+private:
+    int m_nestedItem;
+    const ItemVerifier *m_verifier;
+    DynamicContext::Ptr m_context;
+};
+
+class ItemVerifier::VerifierDynamicContext : public DelegatingDynamicContext{
+public:
+    VerifierDynamicContext(const DynamicContext::Ptr &context, const ItemVerifier *verifier, QAbstractXmlReceiver *outputReceiver)
+        : DelegatingDynamicContext(context), m_outputReceiver(verifier, context, outputReceiver)
+    {}
+
+    virtual QAbstractXmlReceiver *outputReceiver() const
+    {
+        return &const_cast<VerifierDynamicContext*>(this)->m_outputReceiver;
+    }
+
+private:
+    VerifierSequenceReceiver m_outputReceiver;
+};
+
+void ItemVerifier::evaluateToSequenceReceiver(const DynamicContext::Ptr &context) const
+{
+    DynamicContext::Ptr verifierContext(new VerifierDynamicContext(context, this, context->outputReceiver()));
+    m_operand->evaluateToSequenceReceiver(verifierContext);
 }
 
 SequenceType::Ptr ItemVerifier::staticType() const

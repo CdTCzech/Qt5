@@ -78,7 +78,7 @@ Item QNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
     if(ns.isEmpty())
     {
         if(prefix.isEmpty())
-            return toItem(QNameValue::fromValue(context->namePool(), n));
+            return Item(QNameValue::fromValue(context->namePool(), n));
         else
         {
             context->error(QtXmlPatterns::tr(
@@ -91,7 +91,7 @@ Item QNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
         }
     }
     else
-        return toItem(QNameValue::fromValue(context->namePool(), n));
+        return Item(QNameValue::fromValue(context->namePool(), n));
 }
 
 Item ResolveQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
@@ -110,7 +110,7 @@ Item ResolveQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
                                                                               resolver,
                                                                               this);
 
-    return toItem(QNameValue::fromValue(context->namePool(), name));
+    return Item(QNameValue::fromValue(context->namePool(), name));
 }
 
 Item PrefixFromQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
@@ -130,13 +130,13 @@ Item PrefixFromQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) co
 Item LocalNameFromQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
     const QNameValue::Ptr arg(m_operands.first()->evaluateSingleton(context).as<QNameValue>());
-    return arg ? toItem(AtomicString::fromValue(context->namePool()->stringForLocalName(arg->qName().localName()))) : Item();
+    return arg ? Item(AtomicString::fromValue(context->namePool()->stringForLocalName(arg->qName().localName()))) : Item();
 }
 
 Item NamespaceURIFromQNameFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
     const QNameValue::Ptr arg(m_operands.first()->evaluateSingleton(context).as<QNameValue>());
-    return arg ? toItem(AnyURI::fromValue(context->namePool()->stringForNamespace(arg->qName().namespaceURI()))) : Item();
+    return arg ? Item(AnyURI::fromValue(context->namePool()->stringForNamespace(arg->qName().namespaceURI()))) : Item();
 }
 
 Item NamespaceURIForPrefixFN::evaluateSingleton(const DynamicContext::Ptr &context) const
@@ -165,7 +165,7 @@ Item NamespaceURIForPrefixFN::evaluateSingleton(const DynamicContext::Ptr &conte
             return Item();
     }
     else
-        return toItem(AnyURI::fromValue(context->namePool()->stringForNamespace(ns)));
+        return Item(AnyURI::fromValue(context->namePool()->stringForNamespace(ns)));
 }
 
 Item::Iterator::Ptr InScopePrefixesFN::evaluateSequence(const DynamicContext::Ptr &context) const

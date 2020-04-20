@@ -70,6 +70,7 @@ namespace QPatternist
     class DayTimeDuration;
     class Expression;
     class TemplateMode;
+    class UserFunction;
 
     /**
      * @short Carries information and facilities used at runtime, and hence
@@ -151,19 +152,8 @@ namespace QPatternist
 
         DynamicContext::Ptr createFocus();
         DynamicContext::Ptr createStack();
+        DynamicContext::Ptr createStack(QExplicitlySharedDataPointer<UserFunction> functionDeclaration);
         DynamicContext::Ptr createReceiverContext(QAbstractXmlReceiver *const receiver);
-
-        /**
-         * Whenever a tree gets built, this function is called. DynamicContext
-         * has the responsibility of keeping a copy of @p nm, such that it
-         * doesn't go out of scope, since no one else will reference @p nm.
-         *
-         * I think this is currently only used for temporary node trees. In
-         * other cases they are stored in the ExternalResourceLoader.
-         *
-         * The caller guarantees that @p nm is not @c null.
-         */
-        virtual void addNodeModel(const QAbstractXmlNodeModel::Ptr &nm) = 0;
 
         /**
          * Same as itemCacheCell(), but is only used for global varibles. This

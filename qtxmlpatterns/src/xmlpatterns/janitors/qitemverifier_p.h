@@ -74,6 +74,7 @@ namespace QPatternist
 
         virtual Item evaluateSingleton(const DynamicContext::Ptr &) const;
         virtual Item::Iterator::Ptr evaluateSequence(const DynamicContext::Ptr &) const;
+        virtual void evaluateToSequenceReceiver(const DynamicContext::Ptr &context) const;
 
         virtual SequenceType::List expectedOperandTypes() const;
         virtual SequenceType::Ptr staticType() const;
@@ -83,6 +84,9 @@ namespace QPatternist
         virtual const SourceLocationReflection *actualReflection() const;
 
     private:
+        class VerifierSequenceReceiver;
+        class VerifierDynamicContext;
+
         typedef QExplicitlySharedDataPointer<const ItemVerifier> ConstPtr;
         inline void verifyItem(const Item &item,
                                const DynamicContext::Ptr &context) const;

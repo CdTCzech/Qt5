@@ -102,8 +102,8 @@ namespace QPatternist
             virtual bool isDeepEqual(const QXmlNodeModelIndex &ni1, const QXmlNodeModelIndex &ni2) const;
             virtual void sendNamespaces(const QXmlNodeModelIndex &n, QAbstractXmlReceiver *const receiver) const;
             virtual QVector<QXmlName> namespaceBindings(const QXmlNodeModelIndex &n) const;
-            virtual QXmlNodeModelIndex elementById(const QXmlName &NCName) const;
-            virtual QVector<QXmlNodeModelIndex> nodesByIdref(const QXmlName &NCName) const;
+            virtual QXmlNodeModelIndex elementById(const QString &NCName) const;
+            virtual QVector<QXmlNodeModelIndex> nodesByIdref(const QString &NCName) const;
             virtual void copyNodeTo(const QXmlNodeModelIndex &node, QAbstractXmlReceiver *const receiver, const NodeCopySettings &) const;
 
             /**
@@ -160,7 +160,7 @@ namespace QPatternist
             virtual QVector<QXmlNodeModelIndex> attributes(const QXmlNodeModelIndex &element) const;
 
         private:
-            QExplicitlySharedDataPointer<const QAbstractXmlNodeModel> m_internalModel;
+            QAbstractXmlNodeModel::ConstPtr                           m_internalModel;
             QHash<QXmlNodeModelIndex, XsdElement::Ptr>                m_assignedElements;
             QHash<QXmlNodeModelIndex, XsdAttribute::Ptr>              m_assignedAttributes;
             QHash<QXmlNodeModelIndex, SchemaType::Ptr>                m_assignedTypes;

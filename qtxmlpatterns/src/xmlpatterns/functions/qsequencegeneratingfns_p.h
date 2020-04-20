@@ -77,12 +77,12 @@ namespace QPatternist
     {
     public:
         IdFN();
-        typedef QPair<DynamicContext::Ptr, const QAbstractXmlNodeModel *> IDContext;
+        typedef QPair<DynamicContext::Ptr, QAbstractXmlNodeModel::ConstPtr> IdContext;
 
         virtual Item::Iterator::Ptr evaluateSequence(const DynamicContext::Ptr &context) const;
 
         inline Item mapToItem(const QString &id,
-                              const IDContext &context) const;
+                              const IdContext &context) const;
 
         virtual Expression::Ptr typeCheck(const StaticContext::Ptr &context,
                                           const SequenceType::Ptr &reqType);
@@ -101,7 +101,12 @@ namespace QPatternist
     class IdrefFN : public ContextNodeChecker
     {
     public:
+        typedef QPair<DynamicContext::Ptr, QAbstractXmlNodeModel::ConstPtr> IdrefContext;
+
+        inline Item::Iterator::Ptr mapToSequence(const QString &id, const IdrefContext &context) const;
         virtual Item::Iterator::Ptr evaluateSequence(const DynamicContext::Ptr &context) const;
+    private:
+        typedef QExplicitlySharedDataPointer<const IdrefFN> ConstPtr;
     };
 
     /**

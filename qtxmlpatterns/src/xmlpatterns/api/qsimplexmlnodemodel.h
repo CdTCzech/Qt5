@@ -58,8 +58,8 @@ public:
     QXmlNamePool &namePool() const;
     QVector<QXmlName> namespaceBindings(const QXmlNodeModelIndex&) const override;
     QString stringValue(const QXmlNodeModelIndex &node) const override;
-    QXmlNodeModelIndex elementById(const QXmlName &id) const override;
-    QVector<QXmlNodeModelIndex> nodesByIdref(const QXmlName &idref) const override;
+    QXmlNodeModelIndex elementById(const QString &id) const override;
+    QVector<QXmlNodeModelIndex> nodesByIdref(const QString &idref) const override;
 
 private:
     Q_DECLARE_PRIVATE(QSimpleXmlNodeModel)

@@ -53,6 +53,7 @@
 #include "qabstractxmlnodemodel.h"
 #include <private/qpullbridge_p.h>
 #include <private/qxsdschemacontext_p.h>
+#include "qxmlitem.h"
 
 QT_BEGIN_NAMESPACE
 

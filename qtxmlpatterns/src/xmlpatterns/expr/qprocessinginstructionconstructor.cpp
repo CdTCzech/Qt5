@@ -103,7 +103,6 @@ Item ProcessingInstructionConstructor::evaluateSingleton(const DynamicContext::P
     nodeBuilder->processingInstruction(evaluateTardata(context), data(context));
 
     const QAbstractXmlNodeModel::Ptr nm(nodeBuilder->builtDocument());
-    context->addNodeModel(nm);
 
     return nm->root(QXmlNodeModelIndex());
 }

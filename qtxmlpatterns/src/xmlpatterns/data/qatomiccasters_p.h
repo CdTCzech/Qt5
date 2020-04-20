@@ -240,7 +240,7 @@ namespace QPatternist
             if(IsInteger)
                 return Integer::fromValue(num->toInteger());
             else
-                return toItem(Decimal::fromValue(num->toDecimal()));
+                return Item(Decimal::fromValue(num->toDecimal()));
         }
     };
 
@@ -689,7 +689,7 @@ namespace QPatternist
                 }
             }
 
-            return toItem(DerivedInteger<type>::fromValue(context->namePool(), from.template as<Numeric>()->toInteger()));
+            return Item(DerivedInteger<type>::fromValue(context->namePool(), from.template as<Numeric>()->toInteger()));
         }
     };
 }

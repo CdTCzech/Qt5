@@ -48,7 +48,7 @@ using namespace QPatternist;
 Item UnparsedEntityURIFN::evaluateSingleton(const DynamicContext::Ptr &context) const
 {
     checkTargetNode(context->contextItem().asNode(), context, ReportContext::XTDE1370);
-    return toItem(AnyURI::fromValue(QUrl()));
+    return Item(AnyURI::fromValue(QUrl()));
 }
 
 QT_END_NAMESPACE

@@ -65,7 +65,7 @@ Item AbstractFloatMathematician<isDouble>::calculate(const Item &o1,
     switch(op)
     {
         case Div:
-            return toItem(AbstractFloat<isDouble>::fromValue(num1->toDouble() / num2->toDouble()));
+            return Item(AbstractFloat<isDouble>::fromValue(num1->toDouble() / num2->toDouble()));
         case IDiv:
         {
             if(num1->isNaN() || num2->isNaN())
@@ -91,13 +91,13 @@ Item AbstractFloatMathematician<isDouble>::calculate(const Item &o1,
             return Integer::fromValue(static_cast<xsInteger>(num1->toDouble() / num2->toDouble()));
         }
         case Substract:
-            return toItem(AbstractFloat<isDouble>::fromValue(num1->toDouble() - num2->toDouble()));
+            return Item(AbstractFloat<isDouble>::fromValue(num1->toDouble() - num2->toDouble()));
         case Mod:
-            return toItem(AbstractFloat<isDouble>::fromValue(::fmod(num1->toDouble(), num2->toDouble())));
+            return Item(AbstractFloat<isDouble>::fromValue(::fmod(num1->toDouble(), num2->toDouble())));
         case Multiply:
-            return toItem(AbstractFloat<isDouble>::fromValue(num1->toDouble() * num2->toDouble()));
+            return Item(AbstractFloat<isDouble>::fromValue(num1->toDouble() * num2->toDouble()));
         case Add:
-            return toItem(AbstractFloat<isDouble>::fromValue(num1->toDouble() + num2->toDouble()));
+            return Item(AbstractFloat<isDouble>::fromValue(num1->toDouble() + num2->toDouble()));
     }
 
     Q_ASSERT(false);

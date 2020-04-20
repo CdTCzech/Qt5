@@ -167,11 +167,6 @@ QSourceLocation DelegatingDynamicContext::locationFor(const SourceLocationReflec
     return m_prevContext->locationFor(reflection);
 }
 
-void DelegatingDynamicContext::addNodeModel(const QAbstractXmlNodeModel::Ptr &nm)
-{
-    m_prevContext->addNodeModel(nm);
-}
-
 const QAbstractUriResolver *DelegatingDynamicContext::uriResolver() const
 {
     return m_prevContext->uriResolver();
@@ -205,6 +200,11 @@ DynamicContext::Ptr DelegatingDynamicContext::previousContext() const
 QExplicitlySharedDataPointer<TemplateMode> DelegatingDynamicContext::currentTemplateMode() const
 {
     return m_prevContext->currentTemplateMode();
+}
+
+QString DelegatingDynamicContext::callStack() const
+{
+    return m_prevContext->callStack();
 }
 
 QT_END_NAMESPACE

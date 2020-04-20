@@ -72,9 +72,9 @@ Item::Iterator::Ptr ArgumentConverter::mapToSequence(const Item &item,
 
 Item::Iterator::Ptr ArgumentConverter::evaluateSequence(const DynamicContext::Ptr &context) const
 {
-    return makeSequenceMappingIterator<Item>(ConstPtr(this),
-                                             m_operand->evaluateSequence(context),
-                                             context);
+    return makeSequenceMappingIterator<Item, Item>(ConstPtr(this),
+                                                   m_operand->evaluateSequence(context),
+                                                   context);
 }
 
 Item ArgumentConverter::evaluateSingleton(const DynamicContext::Ptr &context) const

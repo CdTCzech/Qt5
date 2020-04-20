@@ -53,7 +53,7 @@
 #include <private/qreportcontext_p.h>
 #include <private/qschematype_p.h>
 
-#include <QtXmlPatterns/QXmlItem>
+#include "qxmlitem.h"
 
 QT_BEGIN_NAMESPACE
 

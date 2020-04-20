@@ -94,7 +94,7 @@ Item MinutesFromDurationFN::extract(const AbstractDuration *const duration) cons
 
 Item SecondsFromDurationFN::extract(const AbstractDuration *const duration) const
 {
-    return toItem(Decimal::fromValue((duration->seconds() + duration->mseconds() / 1000.0) *
+    return Item(Decimal::fromValue((duration->seconds() + duration->mseconds() / 1000.0) *
                                      (duration->isPositive() ? 1 : -1)));
 }
 
@@ -129,15 +129,15 @@ Item MinutesFromAbstractDateTimeFN::extract(const QDateTime &dt) const
 Item SecondsFromAbstractDateTimeFN::extract(const QDateTime &dt) const
 {
     const QTime time(dt.time());
-    return toItem(Decimal::fromValue(time.second() + time.msec() / 1000.0));
+    return Item(Decimal::fromValue(time.second() + time.msec() / 1000.0));
 }
 
 Item TimezoneFromAbstractDateTimeFN::extract(const QDateTime &dt) const
 {
     if(dt.timeSpec() == Qt::UTC)
-        return toItem(CommonValues::DayTimeDurationZero);
+        return Item(CommonValues::DayTimeDurationZero);
     else if(dt.timeSpec() == Qt::OffsetFromUTC)
-        return toItem(DayTimeDuration::fromSeconds(dt.offsetFromUtc()));
+        return Item(DayTimeDuration::fromSeconds(dt.offsetFromUtc()));
     else
         return Item();
 }

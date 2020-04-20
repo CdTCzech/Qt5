@@ -51,7 +51,7 @@ Item GenerateIDFN::evaluateSingleton(const DynamicContext::Ptr &context) const
     if (item.isNull())
         return AtomicString::fromValue(QString());
 
-    const QXmlNodeModelIndex &node = item.asNode();
+    const QXmlNodeModelIndex node = item.asNode();
 
     return AtomicString::fromValue(QLatin1Char('T')
                                    + QString::number(qptrdiff(node.model()))

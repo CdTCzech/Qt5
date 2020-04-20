@@ -47,74 +47,35 @@
 //
 // We mean it.
 
-#ifndef Patternist_CachingIterator_H
-#define Patternist_CachingIterator_H
+#ifndef Patternist_StackContext_H
+#define Patternist_StackContext_H
 
-#include <QList>
 #include <QVector>
 
-#include <private/qdynamiccontext_p.h>
-#include <private/qitem_p.h>
+#include <private/qdaytimeduration_p.h>
+#include <private/qdelegatingdynamiccontext_p.h>
+#include <private/qexpression_p.h>
+#include "qstackcontextbase_p.h"
 
 QT_BEGIN_NAMESPACE
 
 namespace QPatternist
 {
     /**
-     * @short An QAbstractXmlForwardIterator that gets its item from a cache unless its empty, in
-     * which case it continues to populate the cache as well as deliver on its
-     * own from a source QAbstractXmlForwardIterator.
+     * @short A DynamicContext that creates a new scope for variables.
      *
-     * @author Frans Englich <frans.frans.englich@nokia.com>
-     * @ingroup Patternist_iterators
+     * This DynamicContext is used for recursive user function calls, for example.
      */
-    class CachingIterator : public Item::Iterator
-    {
+    class StackContext : public StackContextBase<DelegatingDynamicContext> {
     public:
-        /**
-         * We always use the same cache cell so why don't we use it directly,
-         * instead of passing the slot and ItemSequenceCacheCell::Vector to
-         * this class? Because the GenericDynamicContext might decide to resize
-         * the vector and that would invalidate the reference.
-         *
-         * We intentionally pass in a non-const reference here.
-         */
-        CachingIterator(ItemSequenceCacheCell::Vector &cacheCells,
-                        const VariableSlotID slot,
-                        const DynamicContext::Ptr &context);
+        StackContext(const DynamicContext::Ptr &prevContext, QExplicitlySharedDataPointer<UserFunction> functionDeclaration);
+        StackContext(const DynamicContext::Ptr &prevContext);
+        ~StackContext();
 
-        virtual Item next();
-        virtual Item current() const;
-        virtual xsInteger position() const;
-        virtual Item::Iterator::Ptr copy() const;
+        virtual QString callStack() const;
 
     private:
-        Item                        m_current;
-        xsInteger                   m_position;
-
-        /**
-         * This variable cannot be called m_slot, because
-         * /usr/include/sys/sysmacros.h on hpuxi-acc defines it.
-         */
-        const VariableSlotID        m_varSlot;
-
-        /**
-         * We don't use the context. We only keep a reference such that it
-         * doesn't get deleted, and m_cacheCells starts to dangle.
-         */
-        const DynamicContext::Ptr   m_context;
-
-        /**
-         * We intentionally store a reference here such that we are able to
-         * modify the item.
-         */
-        ItemSequenceCacheCell::Vector &m_cacheCells;
-
-        /**
-         * Whether this CachingIterator is delivering items from
-         * m_cacheCell.cacheItems or from m_cacheCell.sourceIterator.
-         */
-        bool m_usingCache;
+        QExplicitlySharedDataPointer<UserFunction> m_functionDeclaration;
     };
 }
 

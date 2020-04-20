@@ -712,16 +712,16 @@ void AccelTree::copyChildren(const QXmlNodeModelIndex &node,
     }
 }
 
-QXmlNodeModelIndex AccelTree::elementById(const QXmlName &id) const
+QXmlNodeModelIndex AccelTree::elementById(const QString &id) const
 {
-    const PreNumber pre = m_IDs.value(id.localName(), -1);
+    const PreNumber pre = m_IDs.value(id, -1);
     if(pre == -1)
         return QXmlNodeModelIndex();
     else
         return createIndex(pre);
 }
 
-QVector<QXmlNodeModelIndex> AccelTree::nodesByIdref(const QXmlName &) const
+QVector<QXmlNodeModelIndex> AccelTree::nodesByIdref(const QString &) const
 {
     return QVector<QXmlNodeModelIndex>();
 }

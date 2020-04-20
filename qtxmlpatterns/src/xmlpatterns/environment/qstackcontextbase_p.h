@@ -116,13 +116,6 @@ namespace QPatternist
     };
 
     #include "qstackcontextbase_tpl_p.h"
-
-    /**
-     * @short A DynamicContext that creates a new scope for variables.
-     *
-     * This DynamicContext is used for recursive user function calls, for example.
-     */
-    typedef StackContextBase<DelegatingDynamicContext> StackContext;
 }
 
 QT_END_NAMESPACE

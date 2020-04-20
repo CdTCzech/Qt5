@@ -85,7 +85,7 @@ Item::Iterator::Ptr Path::evaluateSequence(const DynamicContext::Ptr &context) c
     const DynamicContext::Ptr focus(context->createFocus());
     focus->setFocusIterator(source);
 
-    const Item::Iterator::Ptr result(makeSequenceMappingIterator<Item>(ConstPtr(this), source, focus));
+    const Item::Iterator::Ptr result(makeSequenceMappingIterator<Item, Item>(ConstPtr(this), source, focus));
 
     if(m_checkXPTY0018)
     {

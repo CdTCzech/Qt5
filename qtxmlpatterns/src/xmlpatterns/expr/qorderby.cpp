@@ -199,9 +199,9 @@ Item::Iterator::Ptr OrderBy::evaluateSequence(const DynamicContext::Ptr &context
         std::sort(tuples.begin(), tuples.end(), sorter);
     }
 
-    return makeSequenceMappingIterator<Item>(ConstPtr(this),
-                                             makeListIterator(tuples),
-                                             context);
+    return makeSequenceMappingIterator<Item, Item>(ConstPtr(this),
+                                                   makeListIterator(tuples),
+                                                   context);
 }
 
 Expression::Ptr OrderBy::typeCheck(const StaticContext::Ptr &context,

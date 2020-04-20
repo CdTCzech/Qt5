@@ -77,7 +77,7 @@ namespace QPatternist
          */
         static AtomicValue::Ptr fromLexical(const QString &strNumeric);
 
-        static Item fromValue(const xsInteger num);
+        static Integer::Ptr fromValue(const xsInteger num);
 
         /**
          * Determines the Effective %Boolean Value of this number.

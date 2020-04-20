@@ -156,7 +156,7 @@ Item::Iterator::Ptr ApplyTemplate::evaluateSequence(const DynamicContext::Ptr &c
 
             const DynamicContext::Ptr focus(context->createFocus());
             focus->setFocusIterator(focusIterator);
-            return makeSequenceMappingIterator<Item>(ConstPtr(this), focusIterator, focus);
+            return makeSequenceMappingIterator<Item, Item>(ConstPtr(this), focusIterator, focus);
         }
         return CommonValues::emptyIterator;
     }

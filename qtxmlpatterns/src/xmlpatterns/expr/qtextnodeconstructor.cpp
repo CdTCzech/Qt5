@@ -64,7 +64,6 @@ Item TextNodeConstructor::evaluateSingleton(const DynamicContext::Ptr &context) 
     nodeBuilder->characters(QStringRef(&v));
 
     const QAbstractXmlNodeModel::Ptr nm(nodeBuilder->builtDocument());
-    context->addNodeModel(nm);
 
     return nm->root(QXmlNodeModelIndex());
 }

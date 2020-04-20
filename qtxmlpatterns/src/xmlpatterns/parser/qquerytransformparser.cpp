@@ -3625,8 +3625,8 @@ yyreduce:
                 if(it == end)
                 {
                     parseInfo->staticContext->error(QtXmlPatterns::tr("No function with signature %1 is available")
-                                                       .arg(formatFunction(callsite)),
-                                                    ReportContext::XPST0017, fromYYLTYPE((yyloc), parseInfo));
+                                                        .arg(formatFunction(parseInfo->staticContext->namePool(), callsite)),
+                                                    ReportContext::XPST0017, callsite->sourceLocation());
                 }
             }
         }
@@ -6775,7 +6775,7 @@ yyreduce:
                 const Expression::Ptr ctor(create(new AttributeConstructor((yyvsp[-1].attributeHolders).at(i).second, (yyvsp[-1].attributeHolders).at(i).second), (yyloc), parseInfo));
 
                 Expression::List ops;
-                ops.append(wrapLiteral(toItem(QNameValue::fromValue(namePool, att)), parseInfo->staticContext, ctor.data()));
+                ops.append(wrapLiteral(Item(QNameValue::fromValue(namePool, att)), parseInfo->staticContext, ctor.data()));
                 ops.append((yyvsp[-1].attributeHolders).at(i).second);
                 ctor->setOperands(ops);
 
@@ -6793,7 +6793,7 @@ yyreduce:
             contentOp = create(new ExpressionSequence(attributes), (yyloc), parseInfo);
         }
 
-        const Expression::Ptr name(create(new Literal(toItem(QNameValue::fromValue(parseInfo->staticContext->namePool(), parseInfo->tagStack.top()))), (yyloc), parseInfo));
+        const Expression::Ptr name(create(new Literal(Item(QNameValue::fromValue(parseInfo->staticContext->namePool(), parseInfo->tagStack.top()))), (yyloc), parseInfo));
         (yyval.expr) = create(new ElementConstructor(name, contentOp, parseInfo->isXSLT()), (yyloc), parseInfo);
 
         /* Restore the old context. We don't want the namespaces
@@ -7139,7 +7139,7 @@ yyreduce:
   case 398:
 #line 4264 "querytransformparser.ypp" /* yacc.c:1646  */
     {
-        (yyval.expr) = create(new Literal(toItem(QNameValue::fromValue(parseInfo->staticContext->namePool(), (yyvsp[-1].qName)))), (yyloc), parseInfo);
+        (yyval.expr) = create(new Literal(Item(QNameValue::fromValue(parseInfo->staticContext->namePool(), (yyvsp[(2) - (3)].qName)))), (yyloc), parseInfo);
     }
 #line 7095 "qquerytransformparser.cpp" /* yacc.c:1646  */
     break;
@@ -7147,7 +7147,7 @@ yyreduce:
   case 400:
 #line 4270 "querytransformparser.ypp" /* yacc.c:1646  */
     {
-        (yyval.expr) = create(new Literal(toItem(QNameValue::fromValue(parseInfo->staticContext->namePool(), (yyvsp[0].qName)))), (yyloc), parseInfo);
+        (yyval.expr) = create(new Literal(Item(QNameValue::fromValue(parseInfo->staticContext->namePool(), (yyvsp[(1) - (1)].qName)))), (yyloc), parseInfo);
     }
 #line 7103 "qquerytransformparser.cpp" /* yacc.c:1646  */
     break;

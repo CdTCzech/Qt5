@@ -50,7 +50,6 @@
 #ifndef Patternist_EvaluationCache_H
 #define Patternist_EvaluationCache_H
 
-#include <private/qcachingiterator_p.h>
 #include <private/qcommonsequencetypes_p.h>
 #include <private/qnodebuilder_p.h>
 #include <private/qoperandsiterator_p.h>
@@ -120,7 +119,6 @@ namespace QPatternist
 
     private:
         static DynamicContext::Ptr topFocusContext(const DynamicContext::Ptr &context);
-        const VariableDeclaration::Ptr m_declaration;
         /**
          * This variable must not be called m_slot. If it so, a compiler bug on
          * HP-UX-aCC-64 is triggered in the constructor initializor. See the

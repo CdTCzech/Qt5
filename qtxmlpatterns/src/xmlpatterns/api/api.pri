@@ -27,7 +27,10 @@ HEADERS += $$PWD/qabstractxmlforwarditerator_p.h \
     $$PWD/qxmlserializer_p.h \
     $$PWD/qcoloringmessagehandler_p.h \
     $$PWD/qcoloroutput_p.h \
-    $$PWD/qxmlpatternistcli_p.h
+    $$PWD/qxmlpatternistcli_p.h \
+    $$PWD/qxmlnodemodelindex.h \
+    $$PWD/qxmlitem.h \
+    $$PWD/qxmlitem_p.h
 SOURCES += $$PWD/qvariableloader.cpp \
     $$PWD/qabstractmessagehandler.cpp \
     $$PWD/qabstracturiresolver.cpp \
@@ -48,7 +51,9 @@ SOURCES += $$PWD/qvariableloader.cpp \
     $$PWD/qxmlresultitems.cpp \
     $$PWD/qxmlserializer.cpp \
     $$PWD/qcoloringmessagehandler.cpp \
-    $$PWD/qcoloroutput.cpp
+    $$PWD/qcoloroutput.cpp \
+    $$PWD/qxmlnodemodelindex.cpp \
+    $$PWD/qxmlitem.cpp
 
 qtConfig(xml-schema) {
     HEADERS += $$PWD/qxmlschema.h \

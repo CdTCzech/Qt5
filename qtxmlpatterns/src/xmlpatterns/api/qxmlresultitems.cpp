@@ -107,7 +107,7 @@ QXmlItem QXmlResultItems::next()
 
     try
     {
-        d->current = QPatternist::Item::toPublic(d->iterator->next());
+        d->current = QXmlItem(d->iterator->next());
         return d->current;
     }
     catch(const QPatternist::Exception)

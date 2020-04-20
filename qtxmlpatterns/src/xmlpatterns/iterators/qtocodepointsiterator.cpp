@@ -66,7 +66,7 @@ Item ToCodepointsIterator::next()
         return m_current;
     }
 
-    m_current = Integer::fromValue(m_string.at(m_position - 1).unicode());
+    m_current = Item(Integer::fromValue(m_string.at(m_position - 1).unicode()));
     return m_current;
 }
 

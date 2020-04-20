@@ -58,10 +58,9 @@ template<bool IsForGlobal>
 EvaluationCache<IsForGlobal>::EvaluationCache(const Expression::Ptr &op,
                                               const VariableDeclaration::Ptr &varDecl,
                                               const VariableSlotID aSlot) : SingleContainer(op)
-                                                                          , m_declaration(varDecl)
                                                                           , m_varSlot(aSlot)
 {
-    Q_ASSERT(m_declaration);
+    Q_UNUSED(varDecl);
     Q_ASSERT(m_varSlot > -1);
 }
 
@@ -129,26 +128,22 @@ Item::Iterator::Ptr EvaluationCache<IsForGlobal>::evaluateSequence(const Dynamic
 
     switch(cell.cacheState)
     {
-        case ItemSequenceCacheCell::Full:
+        case ItemSequenceCacheCell::Empty:
+		{
+			cell.inUse = true;
+			Item::Iterator::Ptr sourceIterator = m_operand->evaluateSequence(IsForGlobal ? topFocusContext(context) : context);
+            cell.cachedItems = sourceIterator->toList();
+			cell.inUse = false;
+
+			cell.cacheState = ItemSequenceCacheCell::Full;
+			/* Fallthrough. */
+		}
+		case ItemSequenceCacheCell::Full:
         {
             /**
              * We don't use makeListIterator() here because the MIPSPro compiler can't handle it.
              */
             return Item::Iterator::Ptr(new ListIterator<Item, Item::List>(cell.cachedItems));
-        }
-        case ItemSequenceCacheCell::Empty:
-        {
-            cell.inUse = true;
-            cell.sourceIterator = m_operand->evaluateSequence(IsForGlobal ? topFocusContext(context) : context);
-            cell.cacheState = ItemSequenceCacheCell::PartiallyPopulated;
-            Q_FALLTHROUGH();
-        }
-        case ItemSequenceCacheCell::PartiallyPopulated:
-        {
-            cell.inUse = false;
-            Q_ASSERT_X(cells.at(m_varSlot).sourceIterator, Q_FUNC_INFO,
-                       "This trigger for a cache bug which hasn't yet been analyzed.");
-            return Item::Iterator::Ptr(new CachingIterator(cells, m_varSlot, IsForGlobal ? topFocusContext(context) : context));
         }
         default:
         {
@@ -208,28 +203,21 @@ Expression::Ptr EvaluationCache<IsForGlobal>::compress(const StaticContext::Ptr 
     if(m_operand->is(IDRangeVariableReference))
         return m_operand;
 
-    if(m_declaration->usedByMany())
-    {
-        /* If it's only an atomic value an EvaluationCache is overkill. However,
-         * it's still needed for functions like fn:current-time() that must adhere to
-         * query stability. */
-        const Properties props(m_operand->properties());
+    /* If it's only an atomic value an EvaluationCache is overkill. However,
+     * it's still needed for functions like fn:current-time() that must adhere to
+     * query stability. */
+    const Properties props(m_operand->properties());
 
-        if(props.testFlag(EvaluationCacheRedundant) ||
-           ((props.testFlag(IsEvaluated)) &&
-            !props.testFlag(DisableElimination) &&
-            CommonSequenceTypes::ExactlyOneAtomicType->matches(m_operand->staticType())))
-        {
-            return m_operand;
-        }
-        else
-            return me;
-    }
-    else
+    if(props.testFlag(EvaluationCacheRedundant) ||
+       ((props.testFlag(IsEvaluated)) &&
+        !props.testFlag(DisableElimination) &&
+        CommonSequenceTypes::ExactlyOneAtomicType->matches(m_operand->staticType())))
     {
         /* If we're only used once, there's no need for an EvaluationCache. */
         return m_operand;
     }
+    else
+        return me;
 }
 
 template<bool IsForGlobal>

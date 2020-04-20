@@ -58,14 +58,14 @@ Item NumericToAbstractFloatCaster<isDouble>::castFrom(const Item &from,
                                                            const QExplicitlySharedDataPointer<DynamicContext> &) const
 {
     // toDouble() returns same thing than toFloat()
-    return toItem(AbstractFloat<isDouble>::fromValue(from.template as<Numeric>()->toDouble()));
+    return Item(AbstractFloat<isDouble>::fromValue(from.template as<Numeric>()->toDouble()));
 }
 
 template <const bool isDouble>
 Item StringToAbstractFloatCaster<isDouble>::castFrom(const Item &from,
                                                           const QExplicitlySharedDataPointer<DynamicContext> &) const
 {
-    return toItem(AbstractFloat<isDouble>::fromLexical(from.stringValue()));
+    return Item(AbstractFloat<isDouble>::fromLexical(from.stringValue()));
 }
 
 template <const bool isDouble>
@@ -76,8 +76,8 @@ Item BooleanToAbstractFloatCaster<isDouble>::castFrom(const Item &from,
     // passed directly into another constructor.
     bool tempDouble = isDouble;
     if(from.template as<AtomicValue>()->evaluateEBV(context))
-        return tempDouble ? toItem(CommonValues::DoubleOne) : toItem(CommonValues::FloatOne);
+        return tempDouble ? Item(CommonValues::DoubleOne) : Item(CommonValues::FloatOne);
     else
-        return tempDouble ? toItem(CommonValues::DoubleZero) : toItem(CommonValues::FloatZero);
+        return tempDouble ? Item(CommonValues::DoubleZero) : Item(CommonValues::FloatZero);
 }
 

@@ -88,7 +88,7 @@ Expression::Ptr CountFN::compress(const StaticContext::Ptr &context)
         return wrapLiteral(CommonValues::IntegerZero, context, this);
     }
     else if(card.isExact())
-        return wrapLiteral(Integer::fromValue(card.minimum()), context, this);
+        return wrapLiteral(Item(Integer::fromValue(card.minimum())), context, this);
     else
         return me;
 }
@@ -161,7 +161,7 @@ Item AvgFN::evaluateSingleton(const DynamicContext::Ptr &context) const
     /* Note that we use the same m_mather which was used for adding,
      * can be worth to think about. */
     return ArithmeticExpression::flexiblyCalculate(sum, AtomicMathematician::Div,
-                                                   Integer::fromValue(count),
+                                                   Item(Integer::fromValue(count)),
                                                    m_divider, context,
                                                    this,
                                                    ReportContext::FORG0006);

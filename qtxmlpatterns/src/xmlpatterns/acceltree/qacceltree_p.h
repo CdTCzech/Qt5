@@ -55,6 +55,8 @@
 #include <QVector>
 #include <QXmlName>
 
+#include "qabstractxmlnodemodel.h"
+
 #include <private/qitem_p.h>
 #include <private/qnamepool_p.h>
 
@@ -240,8 +242,8 @@ namespace QPatternist
         virtual QVariant typedValue(const QXmlNodeModelIndex &n) const;
         virtual Item::Iterator::Ptr sequencedTypedValue(const QXmlNodeModelIndex &n) const;
         virtual ItemType::Ptr type(const QXmlNodeModelIndex &ni) const;
-        virtual QXmlNodeModelIndex elementById(const QXmlName &id) const;
-        virtual QVector<QXmlNodeModelIndex> nodesByIdref(const QXmlName &idref) const;
+        virtual QXmlNodeModelIndex elementById(const QString &id) const;
+        virtual QVector<QXmlNodeModelIndex> nodesByIdref(const QString &idref) const;
         virtual void copyNodeTo(const QXmlNodeModelIndex &node,
                                 QAbstractXmlReceiver *const receiver,
                                 const NodeCopySettings &settings) const;
@@ -387,7 +389,7 @@ namespace QPatternist
          * The key is the xml:id value, and the value is the element
          * with that value.
          */
-        QHash<QXmlName::LocalNameCode, PreNumber> m_IDs;
+        QHash<QString, PreNumber> m_IDs;
     };
 }
 

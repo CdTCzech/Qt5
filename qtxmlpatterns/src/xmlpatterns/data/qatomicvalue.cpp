@@ -127,7 +127,7 @@ QVariant AtomicValue::toQt(const AtomicValue *const value)
     }
 }
 
-Item AtomicValue::toXDM(const QVariant &value)
+AtomicValue::Ptr AtomicValue::qtToXDM(const QVariant &value)
 {
     Q_ASSERT_X(value.isValid(), Q_FUNC_INFO,
                "QVariants sent to Patternist must be valid.");
@@ -164,14 +164,14 @@ Item AtomicValue::toXDM(const QVariant &value)
         case QVariant::DateTime:
             return DateTime::fromDateTime(value.toDateTime());
         case QMetaType::Float:
-            return Item(Double::fromValue(value.toFloat()));
+            return Double::fromValue(value.toFloat());
         case QVariant::Double:
-            return Item(Double::fromValue(value.toDouble()));
+            return Double::fromValue(value.toDouble());
         default:
         {
             if (value.userType() == qMetaTypeId<float>())
             {
-                return Item(Float::fromValue(value.value<float>()));
+                return Float::fromValue(value.value<float>());
             }
             else {
                 Q_ASSERT_X(false,
@@ -186,20 +186,9 @@ Item AtomicValue::toXDM(const QVariant &value)
     }
 }
 
-ItemType::Ptr AtomicValue::qtToXDMType(const QXmlItem &item)
+ItemType::Ptr AtomicValue::qtToXDMType(const QVariant &value)
 {
-    Q_ASSERT(!item.isNull());
-
-    if(item.isNull())
-        return ItemType::Ptr();
-
-    if(item.isNode())
-        return BuiltinTypes::node;
-
-    Q_ASSERT(item.isAtomicValue());
-    const QVariant v(item.toAtomicValue());
-
-    switch(int(v.type()))
+    switch(value.userType())
     {
         case QVariant::Char:
         case QVariant::String:

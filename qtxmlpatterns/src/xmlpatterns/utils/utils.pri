@@ -9,7 +9,9 @@ HEADERS += $$PWD/qautoptr_p.h                       \
            $$PWD/qoutputvalidator_p.h               \
            $$PWD/qxpathhelper_p.h                   \
            $$PWD/qdelegatingnamespaceresolver_p.h   \
-           $$PWD/qnodenamespaceresolver_p.h
+           $$PWD/qnodenamespaceresolver_p.h         \
+           $$PWD/qdelegatingabstractxmlreceiver_p.h \
+           $$PWD/qdelegatingabstractxmlforwarditerator_p.h
 
 SOURCES += $$PWD/qgenericnamespaceresolver.cpp   \
     $$PWD/qpatternistlocale.cpp                  \
@@ -18,4 +20,5 @@ SOURCES += $$PWD/qgenericnamespaceresolver.cpp   \
     $$PWD/qoutputvalidator.cpp                   \
     $$PWD/qxpathhelper.cpp                       \
     $$PWD/qdelegatingnamespaceresolver.cpp       \
-    $$PWD/qnodenamespaceresolver.cpp
+    $$PWD/qnodenamespaceresolver.cpp             \
+    $$PWD/qdelegatingabstractxmlreceiver.cpp

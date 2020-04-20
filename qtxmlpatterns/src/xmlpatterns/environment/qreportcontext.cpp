@@ -54,10 +54,20 @@ ReportContext::~ReportContext()
 {
 }
 
-QString ReportContext::finalizeDescription(const QString &desc)
+QString ReportContext::callStack() const
 {
+    return QString();
+}
+
+QString ReportContext::finalizeDescription(const QString &desc) const
+{
+    QString stack = callStack();
+    if (!stack.isEmpty()) {
+        stack = QLatin1String(" Call Stack: ") + stack + QLatin1String(".");
+    }
+
     return QLatin1String("<html xmlns='http://www.w3.org/1999/xhtml/'><body><p>")
-           + desc
+           + desc + escape(stack)
            + QLatin1String("</p></body></html>");
 }
 

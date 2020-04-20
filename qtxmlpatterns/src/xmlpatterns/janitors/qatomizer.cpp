@@ -64,9 +64,9 @@ Item::Iterator::Ptr Atomizer::mapToSequence(const Item &item, const DynamicConte
 
 Item::Iterator::Ptr Atomizer::evaluateSequence(const DynamicContext::Ptr &context) const
 {
-    return makeSequenceMappingIterator<Item>(ConstPtr(this),
-                                             m_operand->evaluateSequence(context),
-                                             context);
+    return makeSequenceMappingIterator<Item, Item>(ConstPtr(this),
+                                                   m_operand->evaluateSequence(context),
+                                                   context);
 }
 
 Item Atomizer::evaluateSingleton(const DynamicContext::Ptr &context) const

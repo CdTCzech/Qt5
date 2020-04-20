@@ -107,7 +107,6 @@ namespace QPatternist
         void setExternalVariableLoader(const ExternalVariableLoader::Ptr &loader);
         virtual NamePool::Ptr namePool() const;
         virtual QSourceLocation locationFor(const SourceLocationReflection *const reflection) const;
-        virtual void addNodeModel(const QAbstractXmlNodeModel::Ptr &nm);
         virtual const QAbstractUriResolver *uriResolver() const;
         virtual ItemCacheCell &globalItemCacheCell(const VariableSlotID slot);
         virtual ItemSequenceCacheCell::Vector &globalItemSequenceCacheCells(const VariableSlotID slot);
@@ -126,6 +125,7 @@ namespace QPatternist
         virtual DynamicContext::Ptr previousContext() const;
 
         virtual QExplicitlySharedDataPointer<TemplateMode> currentTemplateMode() const;
+        virtual QString callStack() const;
 
     private:
         QAbstractMessageHandler *       m_messageHandler;
@@ -137,7 +137,6 @@ namespace QPatternist
         ResourceLoader::Ptr             m_resourceLoader;
         NamePool::Ptr                   m_namePool;
         const LocationHash              m_locations;
-        QAbstractXmlNodeModel::List     m_nodeModels;
         const QAbstractUriResolver *    m_uriResolver;
         ItemCacheCell::Vector           m_globalItemCacheCells;
         ItemSequenceCacheCell::Vector   m_globalItemSequenceCacheCells;

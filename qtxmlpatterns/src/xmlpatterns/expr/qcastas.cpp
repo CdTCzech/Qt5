@@ -170,7 +170,7 @@ Expression::Ptr CastAs::castToQName(const StaticContext::Ptr &context) const
                                               ReportContext::FONS0004>(lexQName,
                                                                        context,
                                                                        context->namespaceBindings(), this));
-    return wrapLiteral(toItem(QNameValue::fromValue(context->namePool(), expName)), context, this);
+    return wrapLiteral(Item(QNameValue::fromValue(context->namePool(), expName)), context, this);
 }
 
 SequenceType::Ptr CastAs::staticType() const

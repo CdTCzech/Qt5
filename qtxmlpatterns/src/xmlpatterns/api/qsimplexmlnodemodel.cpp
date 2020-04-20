@@ -115,7 +115,17 @@ QString QSimpleXmlNodeModel::stringValue(const QXmlNodeModelIndex &node) const
         if(candidate.isNull())
             return QString();
         else
-            return AtomicValue::toXDM(candidate).stringValue();
+        {
+            AtomicValue::Ptr asAtomicValue = AtomicValue::qtToXDM(candidate);
+            if (asAtomicValue)
+            {
+                return asAtomicValue->stringValue();
+            }
+            else
+            {
+                return QString();
+            }
+        }
     }
     else
         return QString();
@@ -160,7 +170,7 @@ QVector<QXmlName> QSimpleXmlNodeModel::namespaceBindings(const QXmlNodeModelInde
 
   This effectively means the model has no elements that have an id.
  */
-QXmlNodeModelIndex QSimpleXmlNodeModel::elementById(const QXmlName &id) const
+QXmlNodeModelIndex QSimpleXmlNodeModel::elementById(const QString &id) const
 {
     Q_UNUSED(id);
     return QXmlNodeModelIndex();
@@ -172,7 +182,7 @@ QXmlNodeModelIndex QSimpleXmlNodeModel::elementById(const QXmlName &id) const
   This effectively means the model has no elements or attributes of
   type \c IDREF.
  */
-QVector<QXmlNodeModelIndex> QSimpleXmlNodeModel::nodesByIdref(const QXmlName &idref) const
+QVector<QXmlNodeModelIndex> QSimpleXmlNodeModel::nodesByIdref(const QString &idref) const
 {
     Q_UNUSED(idref);
     return QVector<QXmlNodeModelIndex>();

@@ -510,22 +510,22 @@ namespace QPatternist
         virtual Numeric::Ptr round() const
         {
             /* xs:integerS never have a mantissa. */
-            return Numeric::Ptr(static_cast<Numeric *>(const_cast<AtomicValue *>(Integer::fromValue(m_value).asAtomicValue())));
+            return Numeric::Ptr(Integer::fromValue(m_value));
         }
 
         virtual Numeric::Ptr roundHalfToEven(const xsInteger) const
         {
-            return Numeric::Ptr(static_cast<Numeric *>(const_cast<AtomicValue *>(Integer::fromValue(m_value).asAtomicValue())));
+            return Numeric::Ptr(Integer::fromValue(m_value));
         }
 
         virtual Numeric::Ptr floor() const
         {
-            return Numeric::Ptr(static_cast<Numeric *>(const_cast<AtomicValue *>(Integer::fromValue(m_value).asAtomicValue())));
+            return Numeric::Ptr(Integer::fromValue(m_value));
         }
 
         virtual Numeric::Ptr ceiling() const
         {
-            return Numeric::Ptr(static_cast<Numeric *>(const_cast<AtomicValue *>(Integer::fromValue(m_value).asAtomicValue())));
+            return Numeric::Ptr(Integer::fromValue(m_value));
         }
 
         virtual Numeric::Ptr abs() const
@@ -537,7 +537,7 @@ namespace QPatternist
              * We've manually inlined qAbs() and invoke xsInteger's
              * constructor. The reason being that we other gets truncation down
              * to StorageType. See for instance XQTS test case absint1args-1. */
-            return Numeric::Ptr(static_cast<Numeric *>(const_cast<AtomicValue *>(Integer::fromValue(largerOrEqual(m_value, 0) ? xsInteger(m_value) : -xsInteger(m_value)).asAtomicValue())));
+            return Numeric::Ptr(Integer::fromValue(largerOrEqual(m_value, 0) ? xsInteger(m_value) : -xsInteger(m_value)));
         }
 
         /**

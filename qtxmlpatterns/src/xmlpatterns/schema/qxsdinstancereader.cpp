@@ -62,7 +62,7 @@ void XsdInstanceReader::readNext()
         m_cachedAttributes = m_model.attributes();
         m_cachedAttributeItems = m_model.attributeItems();
         m_cachedSourceLocation = m_model.sourceLocation();
-        m_cachedItem = QXmlItem(m_model.index());
+        m_cachedItem = QXmlItem(Item(m_model.index()));
     }
 }
 
