@@ -1097,7 +1097,7 @@ static Expression::Ptr resolveVariable(const QXmlName &name,
              * mechanism must. */
             case VariableDeclaration::ExpressionVariable:
             {
-                retval = create(new ExpressionVariableReference(var->slot, var.data()), sourceLocator, parseInfo);
+                retval = create(new ExpressionVariableReference(var->slot, var), sourceLocator, parseInfo);
                 break;
             }
             case VariableDeclaration::FunctionArgument:
@@ -1112,7 +1112,7 @@ static Expression::Ptr resolveVariable(const QXmlName &name,
             }
             case VariableDeclaration::TemplateParameter:
             {
-                retval = create(new TemplateParameterReference(var.data()), sourceLocator, parseInfo);
+                retval = create(new TemplateParameterReference(var), sourceLocator, parseInfo);
                 break;
             }
             case VariableDeclaration::ExternalVariable:
