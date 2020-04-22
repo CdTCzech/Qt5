@@ -362,6 +362,10 @@ RenderWidgetHostViewQt::~RenderWidgetHostViewQt()
 void RenderWidgetHostViewQt::setDelegate(RenderWidgetHostViewQtDelegate* delegate)
 {
     m_delegate.reset(delegate);
+    if (m_deferredShow) {
+        m_deferredShow = false;
+        Show();
+    }
     visualPropertiesChanged();
 }
 
@@ -468,16 +472,21 @@ void RenderWidgetHostViewQt::CopyFromSurface(const gfx::Rect &src_rect,
 
 void RenderWidgetHostViewQt::Show()
 {
-    m_delegate->show();
+    if (m_delegate)
+        m_delegate->show();
+    else
+        m_deferredShow = true;
 }
 
 void RenderWidgetHostViewQt::Hide()
 {
+    Q_ASSERT(m_delegate);
     m_delegate->hide();
 }
 
 bool RenderWidgetHostViewQt::IsShowing()
 {
+    Q_ASSERT(m_delegate);
     return m_delegate->isVisible();
 }
 
@@ -506,7 +515,7 @@ void RenderWidgetHostViewQt::UpdateBackgroundColor()
 }
 
 // Return value indicates whether the mouse is locked successfully or not.
-bool RenderWidgetHostViewQt::LockMouse()
+bool RenderWidgetHostViewQt::LockMouse(bool)
 {
     m_previousMousePosition = QCursor::pos();
     m_delegate->lockMouse();
@@ -751,10 +760,6 @@ gfx::Rect RenderWidgetHostViewQt::GetBoundsInRootWindow()
     return m_windowRectInDips;
 }
 
-void RenderWidgetHostViewQt::ClearCompositorFrame()
-{
-}
-
 void RenderWidgetHostViewQt::OnUpdateTextInputStateCalled(content::TextInputManager *text_input_manager, RenderWidgetHostViewBase *updated_view, bool did_update_state)
 {
     Q_UNUSED(text_input_manager);
@@ -827,7 +832,7 @@ void RenderWidgetHostViewQt::OnTextSelectionChanged(content::TextInputManager *t
 #if defined(USE_OZONE)
     if (!selection->selected_text().empty() && selection->user_initiated()) {
         // Set the CLIPBOARD_TYPE_SELECTION to the ui::Clipboard.
-        ui::ScopedClipboardWriter clipboard_writer(ui::ClipboardType::kSelection);
+        ui::ScopedClipboardWriter clipboard_writer(ui::ClipboardBuffer::kSelection);
         clipboard_writer.WriteText(selection->selected_text());
     }
 #endif // defined(USE_OZONE)
@@ -1706,6 +1711,7 @@ void RenderWidgetHostViewQt::handlePointerEvent(T *event)
     if ((webEvent.GetType() == blink::WebInputEvent::kMouseDown || webEvent.GetType() == blink::WebInputEvent::kMouseUp)
             && webEvent.button == blink::WebMouseEvent::Button::kNoButton) {
         // Blink can only handle the 3 main mouse-buttons and may assert when processing mouse-down for no button.
+        LOG(INFO) << "Unhandled mouse button";
         return;
     }
 
@@ -1834,7 +1840,6 @@ const viz::LocalSurfaceIdAllocation &RenderWidgetHostViewQt::GetLocalSurfaceIdAl
 void RenderWidgetHostViewQt::TakeFallbackContentFrom(content::RenderWidgetHostView *view)
 {
     DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)->IsRenderWidgetHostViewChildFrame());
-    DCHECK(!static_cast<RenderWidgetHostViewBase*>(view)->IsRenderWidgetHostViewGuest());
     RenderWidgetHostViewQt *viewQt = static_cast<RenderWidgetHostViewQt *>(view);
     base::Optional<SkColor> color = viewQt->GetBackgroundColor();
     if (color)
@@ -1874,9 +1879,9 @@ void RenderWidgetHostViewQt::OnRenderFrameMetadataChangedAfterActivation()
     gfx::SizeF contentsSize = metadata.root_layer_size;
     std::swap(m_lastScrollOffset, scrollOffset);
     std::swap(m_lastContentsSize, contentsSize);
-    if (scrollOffset != m_lastScrollOffset)
+    if (m_adapterClient && scrollOffset != m_lastScrollOffset)
         m_adapterClient->updateScrollPosition(toQt(m_lastScrollOffset));
-    if (contentsSize != m_lastContentsSize)
+    if (m_adapterClient && contentsSize != m_lastContentsSize)
         m_adapterClient->updateContentsSize(toQt(m_lastContentsSize));
 }
 

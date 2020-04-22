@@ -40,6 +40,7 @@ ABSL_FLAG(std::string,
           artificial_nearend,
           "",
           "Artificial nearend wav filename");
+ABSL_FLAG(std::string, linear_aec_output, "", "Linear AEC output wav filename");
 ABSL_FLAG(int,
           output_num_channels,
           kParameterNotSpecifiedValue,
@@ -130,6 +131,10 @@ ABSL_FLAG(int,
           kParameterNotSpecifiedValue,
           "Activate (1) or deactivate(0) the legacy AEC");
 ABSL_FLAG(int,
+          use_legacy_ns,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate(0) the legacy AEC");
+ABSL_FLAG(int,
           experimental_agc,
           kParameterNotSpecifiedValue,
           "Activate (1) or deactivate(0) the experimental AGC");
@@ -186,13 +191,14 @@ ABSL_FLAG(float,
           kParameterNotSpecifiedValue,
           "Pre-amplifier gain factor (linear) to apply");
 ABSL_FLAG(int,
-          vad_likelihood,
-          kParameterNotSpecifiedValue,
-          "Specify the VAD likelihood (0-3)");
-ABSL_FLAG(int,
           ns_level,
           kParameterNotSpecifiedValue,
           "Specify the NS level (0-3)");
+ABSL_FLAG(int,
+          maximum_internal_processing_rate,
+          kParameterNotSpecifiedValue,
+          "Set a maximum internal processing rate (32000 or 48000) to override "
+          "the default rate");
 ABSL_FLAG(int,
           stream_delay,
           kParameterNotSpecifiedValue,
@@ -210,6 +216,16 @@ ABSL_FLAG(int,
           simulate_mic_gain,
           0,
           "Activate (1) or deactivate(0) the analog mic gain simulation");
+ABSL_FLAG(int,
+          multi_channel_render,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate(0) multi-channel render processing in "
+          "APM pipeline");
+ABSL_FLAG(int,
+          multi_channel_capture,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate(0) multi-channel capture processing in "
+          "APM pipeline");
 ABSL_FLAG(int,
           simulated_mic_kind,
           kParameterNotSpecifiedValue,
@@ -333,7 +349,6 @@ SimulationSettings CreateSettings() {
   if (absl::GetFlag(FLAGS_all_default)) {
     settings.use_le = true;
     settings.use_vad = true;
-    settings.use_ie = false;
     settings.use_ts = true;
     settings.use_ns = true;
     settings.use_hpf = true;
@@ -356,6 +371,8 @@ SimulationSettings CreateSettings() {
                         &settings.reverse_output_filename);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_artificial_nearend),
                         &settings.artificial_nearend_filename);
+  SetSettingIfSpecified(absl::GetFlag(FLAGS_linear_aec_output),
+                        &settings.linear_aec_output_filename);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_output_num_channels),
                         &settings.output_num_channels);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_reverse_output_num_channels),
@@ -389,6 +406,8 @@ SimulationSettings CreateSettings() {
 
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_use_legacy_aec),
                       &settings.use_legacy_aec);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_use_legacy_ns),
+                      &settings.use_legacy_ns);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_experimental_agc),
                       &settings.use_experimental_agc);
   SetSettingIfFlagSet(
@@ -414,9 +433,9 @@ SimulationSettings CreateSettings() {
       absl::GetFlag(FLAGS_agc2_adaptive_level_estimator));
   SetSettingIfSpecified(absl::GetFlag(FLAGS_pre_amplifier_gain_factor),
                         &settings.pre_amplifier_gain_factor);
-  SetSettingIfSpecified(absl::GetFlag(FLAGS_vad_likelihood),
-                        &settings.vad_likelihood);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_ns_level), &settings.ns_level);
+  SetSettingIfSpecified(absl::GetFlag(FLAGS_maximum_internal_processing_rate),
+                        &settings.maximum_internal_processing_rate);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_stream_delay),
                         &settings.stream_delay);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_use_stream_delay),
@@ -430,6 +449,10 @@ SimulationSettings CreateSettings() {
   SetSettingIfSpecified(absl::GetFlag(FLAGS_aec_settings),
                         &settings.aec_settings_filename);
   settings.initial_mic_level = absl::GetFlag(FLAGS_initial_mic_level);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_multi_channel_render),
+                      &settings.multi_channel_render);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_multi_channel_capture),
+                      &settings.multi_channel_capture);
   settings.simulate_mic_gain = absl::GetFlag(FLAGS_simulate_mic_gain);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_simulated_mic_kind),
                         &settings.simulated_mic_kind);
@@ -462,9 +485,15 @@ void ReportConditionalErrorAndExit(bool condition, const std::string& message) {
 
 void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
   if (settings.input_filename || settings.reverse_input_filename) {
-    ReportConditionalErrorAndExit(!!settings.aec_dump_input_filename,
-                                  "Error: The aec dump cannot be specified "
-                                  "together with input wav files!\n");
+    ReportConditionalErrorAndExit(
+        !!settings.aec_dump_input_filename,
+        "Error: The aec dump file cannot be specified "
+        "together with input wav files!\n");
+
+    ReportConditionalErrorAndExit(
+        !!settings.aec_dump_input_string,
+        "Error: The aec dump input string cannot be specified "
+        "together with input wav files!\n");
 
     ReportConditionalErrorAndExit(!!settings.artificial_nearend_filename,
                                   "Error: The artificial nearend cannot be "
@@ -480,10 +509,28 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
         "Error: When operating at wav files, the reverse input wav filename "
         "must be specified if the reverse output wav filename is specified!\n");
   } else {
-    ReportConditionalErrorAndExit(!settings.aec_dump_input_filename,
-                                  "Error: Either the aec dump or the wav "
-                                  "input files must be specified!\n");
+    ReportConditionalErrorAndExit(
+        !settings.aec_dump_input_filename && !settings.aec_dump_input_string,
+        "Error: Either the aec dump input file, the wav "
+        "input file or the aec dump input string must be specified!\n");
+    ReportConditionalErrorAndExit(
+        settings.aec_dump_input_filename && settings.aec_dump_input_string,
+        "Error: The aec dump input file cannot be specified together with the "
+        "aec dump input string!\n");
   }
+
+  ReportConditionalErrorAndExit(settings.use_aec && !(*settings.use_aec) &&
+                                    settings.linear_aec_output_filename,
+                                "Error: The linear AEC ouput filename cannot "
+                                "be specified without the AEC being active");
+
+  ReportConditionalErrorAndExit(
+      ((settings.use_aec && *settings.use_aec && settings.use_legacy_aec &&
+        *settings.use_legacy_aec) ||
+       (settings.use_aecm && *settings.use_aecm)) &&
+          !!settings.linear_aec_output_filename,
+      "Error: The linear AEC ouput filename cannot be specified when the "
+      "legacy AEC or the AECm are used");
 
   ReportConditionalErrorAndExit(
       settings.use_aec && *settings.use_aec && settings.use_aecm &&
@@ -530,11 +577,6 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
       settings.agc2_fixed_gain_db && ((*settings.agc2_fixed_gain_db) < 0 ||
                                       (*settings.agc2_fixed_gain_db) > 90),
       "Error: --agc2_fixed_gain_db must be specified between 0 and 90.\n");
-
-  ReportConditionalErrorAndExit(
-      settings.vad_likelihood &&
-          ((*settings.vad_likelihood) < 0 || (*settings.vad_likelihood) > 3),
-      "Error: --vad_likelihood must be specified between 0 and 3.\n");
 
   ReportConditionalErrorAndExit(
       settings.ns_level &&
@@ -600,6 +642,11 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
       "Error: --artifical_nearend must be a valid .wav file name.\n");
 
   ReportConditionalErrorAndExit(
+      settings.linear_aec_output_filename &&
+          (!valid_wav_name(*settings.linear_aec_output_filename)),
+      "Error: --linear_aec_output must be a valid .wav file name.\n");
+
+  ReportConditionalErrorAndExit(
       WEBRTC_APM_DEBUG_DUMP == 0 && settings.dump_internal_data,
       "Error: --dump_data cannot be set without proper build support.\n");
 
@@ -624,7 +671,9 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
 
 int AudioprocFloatImpl(std::unique_ptr<AudioProcessingBuilder> ap_builder,
                        int argc,
-                       char* argv[]) {
+                       char* argv[],
+                       absl::string_view input_aecdump,
+                       std::vector<float>* processed_capture_samples) {
   std::vector<char*> args = absl::ParseCommandLine(argc, argv);
   if (args.size() != 1) {
     printf("%s", kUsageDescription);
@@ -632,10 +681,15 @@ int AudioprocFloatImpl(std::unique_ptr<AudioProcessingBuilder> ap_builder,
   }
 
   SimulationSettings settings = CreateSettings();
+  if (!input_aecdump.empty()) {
+    settings.aec_dump_input_string = input_aecdump;
+    settings.processed_capture_samples = processed_capture_samples;
+    RTC_CHECK(settings.processed_capture_samples);
+  }
   PerformBasicParameterSanityChecks(settings);
   std::unique_ptr<AudioProcessingSimulator> processor;
 
-  if (settings.aec_dump_input_filename) {
+  if (settings.aec_dump_input_filename || settings.aec_dump_input_string) {
     processor.reset(new AecDumpBasedSimulator(settings, std::move(ap_builder)));
   } else {
     processor.reset(new WavBasedSimulator(settings, std::move(ap_builder)));

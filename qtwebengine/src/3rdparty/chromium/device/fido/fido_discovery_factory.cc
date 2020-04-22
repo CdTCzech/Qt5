@@ -46,6 +46,10 @@ std::unique_ptr<FidoDiscoveryBase> CreateUsbFidoDiscovery(
 FidoDiscoveryFactory::FidoDiscoveryFactory() = default;
 FidoDiscoveryFactory::~FidoDiscoveryFactory() = default;
 
+void FidoDiscoveryFactory::ResetRequestState() {
+  request_state_ = {};
+}
+
 std::unique_ptr<FidoDiscoveryBase> FidoDiscoveryFactory::Create(
     FidoTransportProtocol transport,
     service_manager::Connector* connector) {
@@ -55,8 +59,14 @@ std::unique_ptr<FidoDiscoveryBase> FidoDiscoveryFactory::Create(
     case FidoTransportProtocol::kBluetoothLowEnergy:
       return std::make_unique<FidoBleDiscovery>();
     case FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy:
-      NOTREACHED() << "Cable discovery is constructed using the dedicated "
-                      "factory method.";
+      if (request_state_.cable_data_.has_value() ||
+          request_state_.qr_generator_key_.has_value()) {
+        return std::make_unique<FidoCableDiscovery>(
+            request_state_.cable_data_.value_or(
+                std::vector<CableDiscoveryData>()),
+            request_state_.qr_generator_key_,
+            request_state_.cable_pairing_callback_);
+      }
       return nullptr;
     case FidoTransportProtocol::kNearFieldCommunication:
       // TODO(https://crbug.com/825949): Add NFC support.
@@ -75,27 +85,43 @@ std::unique_ptr<FidoDiscoveryBase> FidoDiscoveryFactory::Create(
   return nullptr;
 }
 
-std::unique_ptr<FidoDiscoveryBase> FidoDiscoveryFactory::CreateCable(
-    std::vector<CableDiscoveryData> cable_data) {
-  return std::make_unique<FidoCableDiscovery>(std::move(cable_data));
+void FidoDiscoveryFactory::set_cable_data(
+    std::vector<CableDiscoveryData> cable_data,
+    base::Optional<QRGeneratorKey> qr_generator_key) {
+  request_state_.cable_data_ = std::move(cable_data);
+  request_state_.qr_generator_key_ = std::move(qr_generator_key);
+}
+
+void FidoDiscoveryFactory::set_cable_pairing_callback(
+    base::RepeatingCallback<void(std::unique_ptr<CableDiscoveryData>)>
+        pairing_callback) {
+  request_state_.cable_pairing_callback_.emplace(std::move(pairing_callback));
 }
 
 #if defined(OS_WIN)
+void FidoDiscoveryFactory::set_win_webauthn_api(WinWebAuthnApi* api) {
+  win_webauthn_api_ = api;
+}
+
+WinWebAuthnApi* FidoDiscoveryFactory::win_webauthn_api() const {
+  return win_webauthn_api_;
+}
+
 std::unique_ptr<FidoDiscoveryBase>
 FidoDiscoveryFactory::MaybeCreateWinWebAuthnApiDiscovery() {
-  if (!base::FeatureList::IsEnabled(device::kWebAuthUseNativeWinApi) ||
-      !WinWebAuthnApi::GetDefault()->IsAvailable()) {
-    return nullptr;
-  }
-  return std::make_unique<WinWebAuthnApiAuthenticatorDiscovery>(
-      // TODO(martinkr): Inject the window from which the request
-      // originated. Windows uses this parameter to center the
-      // dialog over the parent. The dialog should be centered
-      // over the originating Chrome Window; the foreground window
-      // may have changed to something else since the request was
-      // issued.
-      GetForegroundWindow());
+  // TODO(martinkr): Inject the window from which the request originated.
+  // Windows uses this parameter to center the dialog over the parent. The
+  // dialog should be centered over the originating Chrome Window; the
+  // foreground window may have changed to something else since the request
+  // was issued.
+  return win_webauthn_api_ && win_webauthn_api_->IsAvailable()
+             ? std::make_unique<WinWebAuthnApiAuthenticatorDiscovery>(
+                   GetForegroundWindow(), win_webauthn_api_)
+             : nullptr;
 }
 #endif  // defined(OS_WIN)
+
+FidoDiscoveryFactory::RequestState::RequestState() = default;
+FidoDiscoveryFactory::RequestState::~RequestState() = default;
 
 }  // namespace device

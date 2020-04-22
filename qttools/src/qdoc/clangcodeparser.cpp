@@ -45,7 +45,6 @@
 
 #include "codechunk.h"
 #include "config.h"
-#include "generator.h"
 #include "loggingcategory.h"
 #include "qdocdatabase.h"
 #include "utilities.h"
@@ -108,6 +107,54 @@ static QString fromCXString(CXString &&string)
     QString ret = QString::fromUtf8(clang_getCString(string));
     clang_disposeString(string);
     return ret;
+}
+
+static QString templateDecl(CXCursor cursor);
+
+/*!
+    Returns a list of template parameters at \a cursor.
+*/
+static QStringList getTemplateParameters(CXCursor cursor)
+{
+    QStringList parameters;
+    visitChildrenLambda(cursor, [&parameters](CXCursor cur) {
+        QString name = fromCXString(clang_getCursorSpelling(cur));
+        QString type;
+
+        switch (clang_getCursorKind(cur)) {
+        case CXCursor_TemplateTypeParameter:
+            type = QStringLiteral("typename");
+            break;
+        case CXCursor_NonTypeTemplateParameter:
+            type = fromCXString(clang_getTypeSpelling(clang_getCursorType(cur)));
+            // Hack: Omit QtPrivate template parameters from public documentation
+            if (type.startsWith(QLatin1String("QtPrivate")))
+                return CXChildVisit_Continue;
+            break;
+        case CXCursor_TemplateTemplateParameter:
+            type = templateDecl(cur) + QLatin1String(" class");
+            break;
+        default:
+            return CXChildVisit_Continue;
+        }
+
+        if (!name.isEmpty())
+            name.prepend(QLatin1Char(' '));
+
+        parameters << type + name;
+        return CXChildVisit_Continue;
+    });
+
+    return parameters;
+}
+
+/*!
+   Gets the template declaration at specified \a cursor.
+ */
+static QString templateDecl(CXCursor cursor)
+{
+    QStringList params = getTemplateParameters(cursor);
+    return QLatin1String("template <") + params.join(QLatin1String(", ")) + QLatin1Char('>');
 }
 
 /*!
@@ -545,6 +592,8 @@ CXChildVisitResult ClangVisitor::visitFnSignature(CXCursor cursor, CXSourceLocat
                                                   bool &ignoreSignature)
 {
     switch (clang_getCursorKind(cursor)) {
+    case CXCursor_Namespace:
+        return CXChildVisit_Recurse;
     case CXCursor_FunctionDecl:
     case CXCursor_FunctionTemplate:
     case CXCursor_CXXMethod:
@@ -573,6 +622,7 @@ CXChildVisitResult ClangVisitor::visitFnSignature(CXCursor cursor, CXSourceLocat
 CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation loc)
 {
     auto kind = clang_getCursorKind(cursor);
+    QString templateString;
     switch (kind) {
     case CXCursor_TypeAliasDecl: {
         QString spelling = getSpelling(clang_getCursorExtent(cursor));
@@ -595,8 +645,10 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
         if (fromCXString(clang_getCursorSpelling(cursor)).isEmpty()) // anonymous struct or union
             return CXChildVisit_Continue;
         Q_FALLTHROUGH();
-    case CXCursor_ClassDecl:
-    case CXCursor_ClassTemplate: {
+    case CXCursor_ClassTemplate:
+        templateString = templateDecl(cursor);
+        Q_FALLTHROUGH();
+    case CXCursor_ClassDecl: {
         if (!clang_isCursorDefinition(cursor))
             return CXChildVisit_Continue;
 
@@ -622,10 +674,8 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
         classe->setAccess(fromCX_CXXAccessSpecifier(clang_getCXXAccessSpecifier(cursor)));
         classe->setLocation(fromCXSourceLocation(clang_getCursorLocation(cursor)));
 
-        if (kind == CXCursor_ClassTemplate) {
-            QString displayName = fromCXString(clang_getCursorSpelling(cursor));
-            classe->setTemplateStuff(displayName.mid(className.size()));
-        }
+        if (kind == CXCursor_ClassTemplate)
+            classe->setTemplateDecl(templateString);
 
         QScopedValueRollback<Aggregate *> setParent(parent_, classe);
         return visitChildren(cursor);
@@ -639,8 +689,9 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
         auto baseNode = findNodeForCursor(qdb_, baseCursor);
         auto classe = static_cast<ClassNode *>(parent_);
         if (baseNode == nullptr || !baseNode->isClassNode()) {
-            QString bcName = fromCXString(clang_getCursorSpelling(baseCursor));
-            classe->addUnresolvedBaseClass(access, QStringList(bcName), bcName);
+            QString bcName = reconstructQualifiedPathForCursor(baseCursor);
+            classe->addUnresolvedBaseClass(
+                    access, bcName.split(QLatin1String("::"), Qt::SkipEmptyParts), bcName);
             return CXChildVisit_Continue;
         }
         auto baseClasse = static_cast<ClassNode *>(baseNode);
@@ -661,8 +712,10 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
         QScopedValueRollback<Aggregate *> setParent(parent_, ns);
         return visitChildren(cursor);
     }
-    case CXCursor_FunctionDecl:
     case CXCursor_FunctionTemplate:
+        templateString = templateDecl(cursor);
+        Q_FALLTHROUGH();
+    case CXCursor_FunctionDecl:
     case CXCursor_CXXMethod:
     case CXCursor_Constructor:
     case CXCursor_Destructor:
@@ -760,6 +813,7 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
         if (clang_isFunctionTypeVariadic(funcType))
             parameters.append(QStringLiteral("..."));
         readParameterNamesAndAttributes(fn, cursor);
+        fn->setTemplateDecl(templateString);
         return CXChildVisit_Continue;
     }
 #if CINDEX_VERSION >= 36
@@ -774,10 +828,10 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
     }
 #endif
     case CXCursor_EnumDecl: {
-        if (findNodeForCursor(qdb_, cursor)) // Was already parsed, propably in another tu
-            return CXChildVisit_Continue;
+        EnumNode *en = static_cast<EnumNode *>(findNodeForCursor(qdb_, cursor));
+        if (en && en->items().count())
+            return CXChildVisit_Continue; // Was already parsed, probably in another TU
         QString enumTypeName = fromCXString(clang_getCursorSpelling(cursor));
-        EnumNode *en = nullptr;
         if (enumTypeName.isEmpty()) {
             enumTypeName = "anonymous";
             if (parent_ && (parent_->isClassNode() || parent_->isNamespace())) {
@@ -787,10 +841,11 @@ CXChildVisitResult ClangVisitor::visitHeader(CXCursor cursor, CXSourceLocation l
             }
         }
         if (!en) {
-            en = new EnumNode(parent_, enumTypeName);
+            en = new EnumNode(parent_, enumTypeName, clang_EnumDecl_isScoped(cursor));
             en->setAccess(fromCX_CXXAccessSpecifier(clang_getCXXAccessSpecifier(cursor)));
             en->setLocation(fromCXSourceLocation(clang_getCursorLocation(cursor)));
         }
+
         // Enum values
         visitChildrenLambda(cursor, [&](CXCursor cur) {
             if (clang_getCursorKind(cur) != CXCursor_EnumConstantDecl)
@@ -1045,8 +1100,9 @@ ClangCodeParser::~ClangCodeParser()
   \a config. Call the initializeParser() in the base class.
   Get the defines list from the qdocconf database.
  */
-void ClangCodeParser::initializeParser(const Config &config)
+void ClangCodeParser::initializeParser()
 {
+    Config &config = Config::instance();
     printParsingErrors_ = 1;
     version_ = config.getString(CONFIG_VERSION);
     const auto args = config.getStringList(CONFIG_INCLUDEPATHS);
@@ -1076,7 +1132,7 @@ void ClangCodeParser::initializeParser(const Config &config)
         path.prepend(option);
         includePaths_.append(path);
     }
-    CppCodeParser::initializeParser(config);
+    CppCodeParser::initializeParser();
     pchFileDir_.reset(nullptr);
     allHeaders_.clear();
     pchName_.clear();
@@ -1176,6 +1232,7 @@ static const char *defaultArgs_[] = {
     "-Wno-constant-logical-operand",
     "-Wno-macro-redefined",
     "-Wno-nullability-completeness",
+    "-fvisibility=default",
     "-ferror-limit=0",
     "-I" CLANG_RESOURCE_DIR
 };
@@ -1231,8 +1288,7 @@ bool ClangCodeParser::getMoreArgs()
           of reasonable places to look for include files and use
           that list instead.
          */
-        Location::logToStdErrAlways(
-                "No include paths passed to qdoc; guessing reasonable include paths");
+        qCWarning(lcQdoc) << "No include paths passed to qdoc; guessing reasonable include paths";
         guessedIncludePaths = true;
         auto forest = qdb_->searchOrder();
 
@@ -1262,7 +1318,7 @@ void ClangCodeParser::buildPCH()
             const QByteArray module = moduleHeader().toUtf8();
             QByteArray header;
             QByteArray privateHeaderDir;
-            Location::logToStdErrAlways("Build & visit PCH for " + moduleHeader());
+            qCDebug(lcQdoc) << "Build and visit PCH for" << moduleHeader();
             // A predicate for std::find_if() to locate a path to the module's header
             // (e.g. QtGui/QtGui) to be used as pre-compiled header
             struct FindPredicate
@@ -1353,8 +1409,7 @@ void ClangCodeParser::buildPCH()
                 tmpHeaderFile.close();
             }
             if (printParsingErrors_ == 0)
-                Location::logToStdErrAlways(
-                        "clang not printing errors; include paths were guessed");
+                qCWarning(lcQdoc) << "clang not printing errors; include paths were guessed";
             CXErrorCode err =
                     clang_parseTranslationUnit2(index_, tmpHeader.toLatin1().data(), args_.data(),
                                                 static_cast<int>(args_.size()), nullptr, 0,
@@ -1366,7 +1421,7 @@ void ClangCodeParser::buildPCH()
                 auto error = clang_saveTranslationUnit(tu, pchName_.constData(),
                                                        clang_defaultSaveOptions(tu));
                 if (error) {
-                    Location::logToStdErrAlways("Could not save PCH file for " + moduleHeader());
+                    qCCritical(lcQdoc) << "Could not save PCH file for" << moduleHeader();
                     pchName_.clear();
                 } else {
                     // Visit the header now, as token from pre-compiled header won't be visited
@@ -1374,12 +1429,12 @@ void ClangCodeParser::buildPCH()
                     CXCursor cur = clang_getTranslationUnitCursor(tu);
                     ClangVisitor visitor(qdb_, allHeaders_);
                     visitor.visitChildren(cur);
-                    Location::logToStdErrAlways("PCH built & visited for " + moduleHeader());
+                    qCDebug(lcQdoc) << "PCH built and visited for" << moduleHeader();
                 }
                 clang_disposeTranslationUnit(tu);
             } else {
                 pchFileDir_->remove();
-                Location::logToStdErrAlways("Could not create PCH file for " + moduleHeader());
+                qCCritical(lcQdoc) << "Could not create PCH file for " << moduleHeader();
             }
             args_.pop_back(); // remove the "-xc++";
         }
@@ -1455,14 +1510,14 @@ void ClangCodeParser::parseSourceFile(const Location & /*location*/, const QStri
         return;
     }
 
-    CXCursor cur = clang_getTranslationUnitCursor(tu);
+    CXCursor tuCur = clang_getTranslationUnitCursor(tu);
     ClangVisitor visitor(qdb_, allHeaders_);
-    visitor.visitChildren(cur);
+    visitor.visitChildren(tuCur);
 
     CXToken *tokens;
     unsigned int numTokens = 0;
     const QSet<QString> &commands = topicCommands() + metaCommands();
-    clang_tokenize(tu, clang_getCursorExtent(cur), &tokens, &numTokens);
+    clang_tokenize(tu, clang_getCursorExtent(tuCur), &tokens, &numTokens);
 
     for (unsigned int i = 0; i < numTokens; ++i) {
         if (clang_getTokenKind(tokens[i]) != CXToken_Comment)
@@ -1471,7 +1526,8 @@ void ClangCodeParser::parseSourceFile(const Location & /*location*/, const QStri
         if (!comment.startsWith("/*!"))
             continue;
 
-        auto loc = fromCXSourceLocation(clang_getTokenLocation(tu, tokens[i]));
+        auto commentLoc = clang_getTokenLocation(tu, tokens[i]);
+        auto loc = fromCXSourceLocation(commentLoc);
         auto end_loc = fromCXSourceLocation(clang_getRangeEnd(clang_getTokenExtent(tu, tokens[i])));
         Doc::trimCStyleComment(loc, comment);
 
@@ -1488,7 +1544,6 @@ void ClangCodeParser::parseSourceFile(const Location & /*location*/, const QStri
             topic = topics[0].topic;
 
         if (topic.isEmpty()) {
-            CXSourceLocation commentLoc = clang_getTokenLocation(tu, tokens[i]);
             Node *n = nullptr;
             if (i + 1 < numTokens) {
                 // Try to find the next declaration.
@@ -1520,6 +1575,17 @@ void ClangCodeParser::parseSourceFile(const Location & /*location*/, const QStri
                 }
             }
         } else {
+            // Store the namespace scope from lexical parents of the comment
+            namespaceScope_.clear();
+            CXCursor cur = clang_getCursor(tu, commentLoc);
+            while (true) {
+                CXCursorKind kind = clang_getCursorKind(cur);
+                if (clang_isTranslationUnit(kind) || clang_isInvalid(kind))
+                    break;
+                if (kind == CXCursor_Namespace)
+                    namespaceScope_ << fromCXString(clang_getCursorSpelling(cur));
+                cur = clang_getCursorLexicalParent(cur);
+            }
             processTopicArgs(doc, topic, nodes, docs);
         }
         processMetaCommands(nodes, docs);
@@ -1528,6 +1594,7 @@ void ClangCodeParser::parseSourceFile(const Location & /*location*/, const QStri
     clang_disposeTokens(tu, tokens, numTokens);
     clang_disposeTranslationUnit(tu);
     clang_disposeIndex(index_);
+    namespaceScope_.clear();
 }
 
 /*!
@@ -1606,9 +1673,14 @@ Node *ClangCodeParser::parseFnArg(const Location &location, const QString &fnArg
         args.push_back(pchName_.constData());
     }
     CXTranslationUnit tu;
-    QByteArray fn = fnArg.toUtf8();
+    QByteArray fn;
+    for (const auto &ns : qAsConst(namespaceScope_))
+        fn.prepend("namespace " + ns.toUtf8() + " {");
+    fn += fnArg.toUtf8();
     if (!fn.endsWith(";"))
         fn += "{ }";
+    fn.append(namespaceScope_.size(), '}');
+
     const char *dummyFileName = "/fn_dummyfile.cpp";
     CXUnsavedFile unsavedFile { dummyFileName, fn.constData(),
                                 static_cast<unsigned long>(fn.size()) };
@@ -1639,7 +1711,8 @@ Node *ClangCodeParser::parseFnArg(const Location &location, const QString &fnArg
          */
         if (fnNode == nullptr) {
             unsigned diagnosticCount = clang_getNumDiagnostics(tu);
-            if (diagnosticCount > 0 && (!Generator::preparing() || Generator::singleExec())) {
+            const auto &config = Config::instance();
+            if (diagnosticCount > 0 && (!config.preparing() || config.singleExec())) {
                 bool report = true;
                 QStringList signature = fnArg.split(QChar('('));
                 if (signature.size() > 1) {

@@ -195,11 +195,19 @@ QDateTimeEdit::QDateTimeEdit(const QTime &time, QWidget *parent)
     d->init(time.isValid() ? time : QDATETIMEEDIT_TIME_MIN);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
   \internal
 */
-
 QDateTimeEdit::QDateTimeEdit(const QVariant &var, QVariant::Type parserType, QWidget *parent)
+    : QDateTimeEdit(var, QMetaType::Type(parserType), parent)
+{ }
+/*!
+  \internal
+*/
+#endif
+
+QDateTimeEdit::QDateTimeEdit(const QVariant &var, QMetaType::Type parserType, QWidget *parent)
     : QAbstractSpinBox(*new QDateTimeEditPrivate, parent)
 {
     Q_D(QDateTimeEdit);
@@ -683,8 +691,6 @@ QDateTimeEdit::Sections QDateTimeEdit::displayedSections() const
   \property QDateTimeEdit::currentSection
 
   \brief The current section of the spinbox.
-
-  \sa setCurrentSection()
 */
 
 QDateTimeEdit::Section QDateTimeEdit::currentSection() const
@@ -795,7 +801,7 @@ QCalendarWidget *QDateTimeEdit::calendarWidget() const
 {
     Q_D(const QDateTimeEdit);
     if (!d->calendarPopup || !(d->sections & QDateTimeParser::DateSectionMask))
-        return 0;
+        return nullptr;
     if (!d->monthCalendar) {
         const_cast<QDateTimeEditPrivate*>(d)->initCalendarPopup();
     }
@@ -1252,7 +1258,7 @@ void QDateTimeEdit::focusInEvent(QFocusEvent *event)
 {
     Q_D(QDateTimeEdit);
     QAbstractSpinBox::focusInEvent(event);
-    QString *frm = 0;
+    QString *frm = nullptr;
     const int oldPos = d->edit->cursorPosition();
     if (!d->formatExplicitlySet) {
         if (d->displayFormat == d->defaultTimeFormat) {
@@ -1435,7 +1441,16 @@ void QDateTimeEdit::fixup(QString &input) const
     QValidator::State state;
     int copy = d->edit->cursorPosition();
 
-    d->validateAndInterpret(input, copy, state, true);
+    QDateTime value = d->validateAndInterpret(input, copy, state, true);
+    /*
+        String was valid, but the datetime still is not; use the time that
+        has the same distance from epoch.
+        CorrectToPreviousValue correction is handled by QAbstractSpinBox.
+    */
+    if (!value.isValid() && d->correctionMode == QAbstractSpinBox::CorrectToNearestValue) {
+        value = QDateTime::fromMSecsSinceEpoch(value.toMSecsSinceEpoch(), value.timeSpec());
+        input = textFromDateTime(value);
+    }
 }
 
 
@@ -1447,12 +1462,12 @@ QDateTimeEdit::StepEnabled QDateTimeEdit::stepEnabled() const
 {
     Q_D(const QDateTimeEdit);
     if (d->readOnly)
-        return StepEnabled(0);
+        return {};
     if (d->specialValue()) {
-        return (d->minimum == d->maximum ? StepEnabled(0) : StepEnabled(StepUpEnabled));
+        return (d->minimum == d->maximum ? StepEnabled{} : StepEnabled(StepUpEnabled));
     }
 
-    QAbstractSpinBox::StepEnabled ret = 0;
+    QAbstractSpinBox::StepEnabled ret = { };
 
 #ifdef QT_KEYPAD_NAVIGATION
     if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus()) {
@@ -1487,7 +1502,7 @@ QDateTimeEdit::StepEnabled QDateTimeEdit::stepEnabled() const
     switch (d->sectionType(d->currentSectionIndex)) {
     case QDateTimeParser::NoSection:
     case QDateTimeParser::FirstSection:
-    case QDateTimeParser::LastSection: return 0;
+    case QDateTimeParser::LastSection: return { };
     default: break;
     }
     if (d->wrapping)
@@ -1565,7 +1580,7 @@ void QDateTimeEdit::mousePressEvent(QMouseEvent *event)
 
 
 QTimeEdit::QTimeEdit(QWidget *parent)
-    : QDateTimeEdit(QDATETIMEEDIT_TIME_MIN, QVariant::Time, parent)
+    : QDateTimeEdit(QDATETIMEEDIT_TIME_MIN, QMetaType::QTime, parent)
 {
     connect(this, &QTimeEdit::timeChanged, this, &QTimeEdit::userTimeChanged);
 }
@@ -1576,7 +1591,7 @@ QTimeEdit::QTimeEdit(QWidget *parent)
 */
 
 QTimeEdit::QTimeEdit(const QTime &time, QWidget *parent)
-    : QDateTimeEdit(time, QVariant::Time, parent)
+    : QDateTimeEdit(time, QMetaType::QTime, parent)
 {
     connect(this, &QTimeEdit::timeChanged, this, &QTimeEdit::userTimeChanged);
 }
@@ -1635,7 +1650,7 @@ QTimeEdit::~QTimeEdit()
 */
 
 QDateEdit::QDateEdit(QWidget *parent)
-    : QDateTimeEdit(QDATETIMEEDIT_DATE_INITIAL, QVariant::Date, parent)
+    : QDateTimeEdit(QDATETIMEEDIT_DATE_INITIAL, QMetaType::QDate, parent)
 {
     connect(this, &QDateEdit::dateChanged, this, &QDateEdit::userDateChanged);
 }
@@ -1646,7 +1661,7 @@ QDateEdit::QDateEdit(QWidget *parent)
 */
 
 QDateEdit::QDateEdit(const QDate &date, QWidget *parent)
-    : QDateTimeEdit(date, QVariant::Date, parent)
+    : QDateTimeEdit(date, QMetaType::QDate, parent)
 {
     connect(this, &QDateEdit::dateChanged, this, &QDateEdit::userDateChanged);
 }
@@ -1683,24 +1698,23 @@ QDateEdit::~QDateEdit()
 
 
 QDateTimeEditPrivate::QDateTimeEditPrivate()
-    : QDateTimeParser(QVariant::DateTime, QDateTimeParser::DateTimeEdit, QCalendar())
+    : QDateTimeParser(QMetaType::QDateTime, QDateTimeParser::DateTimeEdit, QCalendar())
 {
     hasHadFocus = false;
     formatExplicitlySet = false;
     cacheGuard = false;
     fixday = true;
-    type = QVariant::DateTime;
-    sections = 0;
+    type = QMetaType::QDateTime;
+    sections = { };
     cachedDay = -1;
     currentSectionIndex = FirstSectionIndex;
 
     first.pos = 0;
-    sections = 0;
     calendarPopup = false;
     minimum = QDATETIMEEDIT_COMPAT_DATE_MIN.startOfDay();
     maximum = QDATETIMEEDIT_DATE_MAX.endOfDay();
     arrowState = QStyle::State_None;
-    monthCalendar = 0;
+    monthCalendar = nullptr;
     readLocaleSettings();
 
 #ifdef QT_KEYPAD_NAVIGATION
@@ -2054,6 +2068,17 @@ QDateTime QDateTimeEditPrivate::stepBy(int sectionIndex, int steps, bool test) c
     const int oldDay = v.date().day(calendar);
 
     setDigit(v, sectionIndex, val);
+    /*
+        Stepping into a daylight saving time that doesn't exist,
+        so use the time that has the same distance from epoch.
+    */
+    if (!v.isValid()) {
+        auto msecsSinceEpoch = v.toMSecsSinceEpoch();
+        // decreasing from e.g 3am to 2am would get us back to 3am, but we want 1am
+        if (steps < 0 && sn.type & HourSectionMask)
+            msecsSinceEpoch -= 3600 * 1000;
+        v = QDateTime::fromMSecsSinceEpoch(msecsSinceEpoch, v.timeSpec());
+    }
     // if this sets year or month it will make
     // sure that days are lowered if needed.
 
@@ -2287,7 +2312,7 @@ QDateTimeEdit::Section QDateTimeEditPrivate::convertToPublic(QDateTimeParser::Se
 
 QDateTimeEdit::Sections QDateTimeEditPrivate::convertSections(QDateTimeParser::Sections s)
 {
-    QDateTimeEdit::Sections ret = 0;
+    QDateTimeEdit::Sections ret;
     if (s & QDateTimeParser::MSecSection)
         ret |= QDateTimeEdit::MSecSection;
     if (s & QDateTimeParser::SecondSection)
@@ -2432,22 +2457,22 @@ void QDateTimeEdit::initStyleOption(QStyleOptionSpinBox *option) const
 void QDateTimeEditPrivate::init(const QVariant &var)
 {
     Q_Q(QDateTimeEdit);
-    switch (var.type()) {
-    case QVariant::Date:
+    switch (var.userType()) {
+    case QMetaType::QDate:
         value = var.toDate().startOfDay();
         updateTimeSpec();
         q->setDisplayFormat(defaultDateFormat);
         if (sectionNodes.isEmpty()) // ### safeguard for broken locale
             q->setDisplayFormat(QLatin1String("dd/MM/yyyy"));
         break;
-    case QVariant::DateTime:
+    case QMetaType::QDateTime:
         value = var;
         updateTimeSpec();
         q->setDisplayFormat(defaultDateTimeFormat);
         if (sectionNodes.isEmpty()) // ### safeguard for broken locale
             q->setDisplayFormat(QLatin1String("dd/MM/yyyy hh:mm:ss"));
         break;
-    case QVariant::Time:
+    case QMetaType::QTime:
         value = QDateTime(QDATETIMEEDIT_DATE_INITIAL, var.toTime());
         updateTimeSpec();
         q->setDisplayFormat(defaultTimeFormat);
@@ -2526,7 +2551,7 @@ void QDateTimeEditPrivate::updateEditFieldGeometry()
 
 QVariant QDateTimeEditPrivate::getZeroVariant() const
 {
-    Q_ASSERT(type == QVariant::DateTime);
+    Q_ASSERT(type == QMetaType::QDateTime);
     return QDateTime(QDATETIMEEDIT_DATE_INITIAL, QTime(), spec);
 }
 

@@ -74,7 +74,7 @@ private slots:
 
 QQmlDebugTest::ConnectResult tst_QQmlPreview::startQmlProcess(const QString &qmlFile)
 {
-    return QQmlDebugTest::connect(QLibraryInfo::location(QLibraryInfo::BinariesPath) + "/qml",
+    return QQmlDebugTest::connectTo(QLibraryInfo::location(QLibraryInfo::BinariesPath) + "/qml",
                                   QStringLiteral("QmlPreview"), testFile(qmlFile), true);
 }
 
@@ -122,7 +122,6 @@ void checkFiles(const QStringList &files)
 {
     QVERIFY(!files.contains("/etc/localtime"));
     QVERIFY(!files.contains("/etc/timezome"));
-    QVERIFY(!files.contains(":/qgradient/webgradients.binaryjson"));
 }
 
 void tst_QQmlPreview::cleanup()

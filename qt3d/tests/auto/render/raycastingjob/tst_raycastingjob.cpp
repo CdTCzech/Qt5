@@ -38,6 +38,7 @@
 #include <Qt3DCore/private/qaspectmanager_p.h>
 #include <Qt3DCore/private/qscene_p.h>
 #include <Qt3DCore/private/qaspectengine_p.h>
+#include <Qt3DCore/private/qaspectjob_p.h>
 #include <QtQuick/qquickwindow.h>
 
 #include <Qt3DRender/QCamera>
@@ -285,7 +286,7 @@ private Q_SLOTS:
         initializeJob(&rayCastingJob, test.data());
 
         bool earlyReturn = !rayCastingJob.runHelper();
-        Qt3DCore::QAspectJobPrivate::get(&rayCastingJob)->postFrame(test->aspectManager());
+        rayCastingJob.postFrame(test->aspectManager());
         QCoreApplication::processEvents();
 
         // THEN
@@ -345,7 +346,7 @@ private Q_SLOTS:
         initializeJob(&rayCastingJob, test.data());
 
         bool earlyReturn = !rayCastingJob.runHelper();
-        Qt3DCore::QAspectJobPrivate::get(&rayCastingJob)->postFrame(test->aspectManager());
+        rayCastingJob.postFrame(test->aspectManager());
         QCoreApplication::processEvents();
 
         // THEN

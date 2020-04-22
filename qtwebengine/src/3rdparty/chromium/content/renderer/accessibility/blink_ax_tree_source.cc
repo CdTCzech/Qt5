@@ -274,6 +274,8 @@ std::string GetEquivalentAriaRoleString(const ax::mojom::Role role) {
       return "figure";
     case ax::mojom::Role::kFooter:
       return "contentinfo";
+    case ax::mojom::Role::kHeader:
+      return "banner";
     case ax::mojom::Role::kHeading:
       return "heading";
     case ax::mojom::Role::kImage:
@@ -285,6 +287,9 @@ std::string GetEquivalentAriaRoleString(const ax::mojom::Role role) {
     case ax::mojom::Role::kRadioButton:
       return "radio";
     case ax::mojom::Role::kRegion:
+      return "region";
+    case ax::mojom::Role::kSection:
+      // A <section> element uses the 'region' ARIA role mapping.
       return "region";
     case ax::mojom::Role::kSlider:
       return "slider";
@@ -803,10 +808,10 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
                                     src.AccessKey().Utf8());
     }
 
-    if (src.AriaAutoComplete().length()) {
+    if (src.AutoComplete().length()) {
       TruncateAndAddStringAttribute(dst,
                                     ax::mojom::StringAttribute::kAutoComplete,
-                                    src.AriaAutoComplete().Utf8());
+                                    src.AutoComplete().Utf8());
     }
 
     if (src.Action() != ax::mojom::DefaultActionVerb::kNone) {
@@ -1042,6 +1047,16 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
       if (FindExactlyOneInnerImageInMaxDepthTwo(src, &inner_image))
         AddImageAnnotations(inner_image, dst);
     }
+
+    WebNode node = src.GetNode();
+    if (!node.IsNull() && node.IsElementNode()) {
+      WebElement element = node.To<WebElement>();
+      if (element.HasHTMLTagName("input") && element.HasAttribute("type")) {
+        TruncateAndAddStringAttribute(dst,
+                                      ax::mojom::StringAttribute::kInputType,
+                                      element.GetAttribute("type").Utf8());
+      }
+    }
   }
 
   // The majority of the rest of this code computes attributes needed for
@@ -1210,6 +1225,11 @@ void BlinkAXTreeSource::AddImageAnnotations(blink::WebAXObject& src,
                                             AXContentNodeData* dst) const {
   if (!base::FeatureList::IsEnabled(features::kExperimentalAccessibilityLabels))
     return;
+
+  // Reject ignored objects
+  if (src.AccessibilityIsIgnored()) {
+    return;
+  }
 
   // Reject images that are explicitly empty, or that have a name already.
   //

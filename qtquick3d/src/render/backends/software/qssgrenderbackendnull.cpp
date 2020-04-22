@@ -283,6 +283,7 @@ struct QSSGNullBackend : public QSSGRenderBackend
     {
     }
     void bindTexture(QSSGRenderBackendTextureObject, QSSGRenderTextureTargetType, qint32) override {}
+    void setActiveTexture(qint32) override {}
     void bindImageTexture(QSSGRenderBackendTextureObject, quint32, qint32, bool, qint32, QSSGRenderImageAccessType, QSSGRenderTextureFormat) override
     {
     }
@@ -357,6 +358,7 @@ struct QSSGNullBackend : public QSSGRenderBackend
     {
         return false;
     }
+    void resetStates() override {};
     void setPatchVertexCount(QSSGRenderBackendInputAssemblerObject, quint32) override {}
     QSSGRenderBackendVertexShaderObject createVertexShader(QSSGByteView, QByteArray &, bool) override
     {
@@ -412,6 +414,8 @@ struct QSSGNullBackend : public QSSGRenderBackend
     void releaseProgramPipeline(QSSGRenderBackendProgramPipeline) override {}
 
     bool linkProgram(QSSGRenderBackendShaderProgramObject, QByteArray &) override { return false; }
+    bool linkProgram(QSSGRenderBackendShaderProgramObject , QByteArray &, quint32 , const QByteArray &) override { return false; }
+    void getProgramBinary(QSSGRenderBackendShaderProgramObject ,quint32 &, QByteArray &) override {};
     void setActiveProgram(QSSGRenderBackendShaderProgramObject) override {}
     void setActiveProgramPipeline(QSSGRenderBackendProgramPipeline) override {}
     void setProgramStages(QSSGRenderBackendProgramPipeline, QSSGRenderShaderTypeFlags, QSSGRenderBackendShaderProgramObject) override

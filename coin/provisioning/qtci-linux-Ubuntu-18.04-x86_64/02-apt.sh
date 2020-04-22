@@ -169,11 +169,8 @@ installPackages+=(git-lfs)
 installPackages+=(chrpath)
 installPackages+=(gawk)
 installPackages+=(texinfo)
-# Needed for qtwebkit
-installPackages+=(ruby)
-installPackages+=(libxslt1-dev)
-installPackages+=(libxml2-dev)
-installPackages+=(libhyphen-dev)
+# Needed for Poppler test in QtWebEngine
+installPackages+=(libpoppler-cpp-dev)
 
 echo "Running update for apt"
 waitLoop

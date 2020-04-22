@@ -52,6 +52,9 @@
 #include "qcocoamimetypes.h"
 #include "qcocoaaccessibility.h"
 #include "qcocoascreen.h"
+#if QT_CONFIG(sessionmanager)
+#  include "qcocoasessionmanager.h"
+#endif
 
 #include <qpa/qplatforminputcontextfactory_p.h>
 #include <qpa/qplatformaccessibility.h>
@@ -244,6 +247,13 @@ QCocoaIntegration::Options QCocoaIntegration::options() const
 {
     return mOptions;
 }
+
+#if QT_CONFIG(sessionmanager)
+QPlatformSessionManager *QCocoaIntegration::createPlatformSessionManager(const QString &id, const QString &key) const
+{
+    return new QCocoaSessionManager(id, key);
+}
+#endif
 
 bool QCocoaIntegration::hasCapability(QPlatformIntegration::Capability cap) const
 {
@@ -462,14 +472,7 @@ QList<QCocoaWindow *> *QCocoaIntegration::popupWindowStack()
 
 void QCocoaIntegration::setApplicationIcon(const QIcon &icon) const
 {
-    NSImage *image = nil;
-    if (!icon.isNull()) {
-        NSSize size = [[[NSApplication sharedApplication] dockTile] size];
-        QPixmap pixmap = icon.pixmap(size.width, size.height);
-        image = static_cast<NSImage *>(qt_mac_create_nsimage(pixmap));
-    }
-    [[NSApplication sharedApplication] setApplicationIconImage:image];
-    [image release];
+    NSApp.applicationIconImage = [NSImage imageFromQIcon:icon];
 }
 
 void QCocoaIntegration::beep() const

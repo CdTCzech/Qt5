@@ -49,7 +49,6 @@
 #include "favicon_manager.h"
 #include "file_picker_controller.h"
 #include "media_capture_devices_dispatcher.h"
-#include "net/network_delegate_qt.h"
 #include "profile_qt.h"
 #include "qwebengineregisterprotocolhandlerrequest.h"
 #include "register_protocol_handler_request_controller_impl.h"
@@ -157,7 +156,7 @@ content::WebContents *WebContentsDelegateQt::OpenURLFromTab(content::WebContents
     load_url_params.override_user_agent = content::NavigationController::UA_OVERRIDE_TRUE;
     load_url_params.href_translate = params.href_translate;
     load_url_params.reload_type = params.reload_type;
-    if (params.uses_post) {
+    if (params.post_data) {
         load_url_params.load_type = content::NavigationController::LOAD_TYPE_HTTP_POST;
         load_url_params.post_data = params.post_data;
     }
@@ -256,7 +255,7 @@ void WebContentsDelegateQt::CloseContents(content::WebContents *source)
     GetJavaScriptDialogManager(source)->CancelDialogs(source, /* whatever?: */false);
 }
 
-void WebContentsDelegateQt::LoadProgressChanged(content::WebContents */*source*/, double progress)
+void WebContentsDelegateQt::LoadProgressChanged(double progress)
 {
     if (!m_loadingErrorFrameList.isEmpty())
         return;
@@ -316,6 +315,14 @@ void WebContentsDelegateQt::RenderFrameHostChanged(content::RenderFrameHost *old
     if (new_host) {
         content::FrameTreeNode *new_node = static_cast<content::RenderFrameHostImpl *>(new_host)->frame_tree_node();
         m_frameFocusedObserver.addNode(new_node);
+
+        // Is this a main frame?
+        if (new_host->GetFrameOwnerElementType() == blink::FrameOwnerElementType::kNone) {
+            content::RenderProcessHost *renderProcessHost = new_host->GetProcess();
+            const base::Process &process = renderProcessHost->GetProcess();
+            if (process.IsValid())
+                m_viewClient->renderProcessPidChanged(process.Pid());
+        }
     }
 }
 
@@ -476,11 +483,12 @@ void WebContentsDelegateQt::DidFinishLoad(content::RenderFrameHost* render_frame
     Q_ASSERT(validated_url.is_valid());
     if (validated_url.spec() == content::kUnreachableWebDataURL) {
         m_loadingErrorFrameList.removeOne(render_frame_host->GetRoutingID());
-        m_viewClient->iconChanged(QUrl());
 
         // Trigger LoadFinished signal for main frame's error page only.
-        if (!render_frame_host->GetParent())
+        if (!render_frame_host->GetParent()) {
+            m_viewClient->iconChanged(QUrl());
             EmitLoadFinished(true /* success */, toQt(validated_url), true /* isErrorPage */);
+        }
 
         return;
     }
@@ -538,7 +546,7 @@ content::JavaScriptDialogManager *WebContentsDelegateQt::GetJavaScriptDialogMana
     return JavaScriptDialogManagerQt::GetInstance();
 }
 
-void WebContentsDelegateQt::EnterFullscreenModeForTab(content::WebContents *web_contents, const GURL& origin, const blink::WebFullscreenOptions &)
+void WebContentsDelegateQt::EnterFullscreenModeForTab(content::WebContents *web_contents, const GURL& origin, const blink::mojom::FullscreenOptions &)
 {
     Q_UNUSED(web_contents);
     if (!m_viewClient->isFullScreenMode())

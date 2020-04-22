@@ -104,7 +104,6 @@ struct QSSGLayerRenderData : public QSSGLayerRenderPreparationData
     void renderClearPass();
     void renderDepthPass(bool inEnableTransparentDepthWrite = false);
     void renderAoPass();
-    void renderFakeDepthMapPass(QSSGRenderTexture2D *theDepthTex, QSSGRenderTextureCube *theDepthCube);
     void renderShadowMapPass(QSSGResourceFrameBuffer *theFB);
     void renderShadowCubeBlurPass(QSSGResourceFrameBuffer *theFB,
                                   const QSSGRef<QSSGRenderTextureCube> &target0,
@@ -127,6 +126,7 @@ struct QSSGLayerRenderData : public QSSGLayerRenderPreparationData
     void endProfiling(const char *nameID);
     void addVertexCount(quint32 count);
 
+    void applyLayerPostEffects(const QSSGRef<QSSGRenderFrameBuffer> &theFB);
     void runnableRenderToViewport(const QSSGRef<QSSGRenderFrameBuffer> &theFB);
 
     // test method to render this layer to a given view projection without running the entire

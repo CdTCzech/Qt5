@@ -206,8 +206,7 @@ void QGeometry::removeAttribute(QAttribute *attribute)
 {
     Q_ASSERT(attribute);
     Q_D(QGeometry);
-    if (!d->m_attributes.removeOne(attribute))
-        return;
+    d->m_attributes.removeOne(attribute);
     // Remove bookkeeping connection
     d->unregisterDestructionHelper(attribute);
     d->updateNode(attribute, "attribute", Qt3DCore::PropertyValueRemoved);

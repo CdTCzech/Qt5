@@ -28,7 +28,7 @@ workerscripts_test.prefix = /workerscripts
 RESOURCES += \
     workerscripts_test \
     trickypaths.qrc \
-    retain.qrc
+    data/retain.qrc
 
 # QTBUG-46375
 !win32: RESOURCES += trickypaths_umlaut.qrc

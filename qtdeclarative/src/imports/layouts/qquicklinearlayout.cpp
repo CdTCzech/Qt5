@@ -675,7 +675,7 @@ void QQuickGridLayout::insertLayoutItems()
         if (shouldIgnoreItem(child, info, sizeHints))
             continue;
 
-        Qt::Alignment alignment = nullptr;
+        Qt::Alignment alignment;
         int row = -1;
         int column = -1;
         int span[2] = {1,1};
@@ -864,7 +864,7 @@ void QQuickLinearLayout::insertLayoutItems()
         if (shouldIgnoreItem(child, info, sizeHints))
             continue;
 
-        Qt::Alignment alignment = nullptr;
+        Qt::Alignment alignment;
         if (info)
             alignment = info->alignment();
 

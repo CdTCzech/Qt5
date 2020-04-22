@@ -47,10 +47,13 @@
 #include "base/run_loop.h"
 #include "base/task/post_task.h"
 #include "base/task/sequence_manager/thread_controller_with_message_pump_impl.h"
+#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/browser/compositor/surface_utils.h"
+#include "content/browser/compositor/viz_process_transport_factory.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #if QT_CONFIG(webengine_printing_and_pdf)
 #include "chrome/browser/printing/print_job_manager.h"
@@ -76,6 +79,7 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
+#include "content/public/common/network_service_util.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "media/audio/audio_manager.h"
@@ -85,8 +89,9 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
-#include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/service_manager/sandbox/switches.h"
+#include "services/tracing/public/cpp/trace_startup.h"
 #include "services/tracing/public/cpp/tracing_features.h"
 #include "third_party/blink/public/common/features.h"
 #include "ui/events/event_switches.h"
@@ -214,6 +219,26 @@ bool usingSoftwareDynamicGL()
 #endif
 }
 
+void setupProxyPac(base::CommandLine *commandLine){
+    if (commandLine->HasSwitch(switches::kProxyPacUrl)) {
+        QUrl pac_url(toQt(commandLine->GetSwitchValueASCII(switches::kProxyPacUrl)));
+        if (pac_url.isValid() && (pac_url.isLocalFile() ||
+            !pac_url.scheme().compare(QLatin1String("qrc"), Qt::CaseInsensitive))) {
+            QFile file;
+            if (pac_url.isLocalFile())
+              file.setFileName(pac_url.toLocalFile());
+            else
+              file.setFileName(pac_url.path().prepend(QChar(':')));
+            if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+               QByteArray ba = file.readAll();
+               commandLine->RemoveSwitch(switches::kProxyPacUrl);
+               commandLine->AppendSwitchASCII(switches::kProxyPacUrl,
+                   ba.toBase64().prepend("data:application/x-javascript-config;base64,").toStdString());
+            }
+        }
+    }
+}
+
 static bool waitForViz = false;
 static void completeVizCleanup()
 {
@@ -231,6 +256,8 @@ static void cleanupVizProcess()
         return;
     waitForViz = true;
     content::GetHostFrameSinkManager()->SetConnectionLostCallback(base::DoNothing());
+    auto factory = static_cast<content::VizProcessTransportFactory*>(content::ImageTransportFactory::GetInstance());
+    factory->PrepareForShutDown();
     vizCompositorThreadRunner->CleanupForShutdown(base::BindOnce(&completeVizCleanup));
 }
 
@@ -320,12 +347,13 @@ void WebEngineContext::destroy()
     // This should deliver all nessesery calls of DeleteSoon from PostTask
     while (delegate->DoWork()) { }
 
-    GLContextHelper::destroy();
     m_devtoolsServer.reset();
     m_runLoop->AfterRun();
 
     // Destroy the main runner, this stops main message loop
     m_browserRunner.reset();
+    // gpu thread is no longer around, so no more cotnext is used, remove the helper
+    GLContextHelper::destroy();
 
     // These would normally be in the content-runner, but we allocated them separately:
     m_startupData.reset();
@@ -491,7 +519,7 @@ WebEngineContext::WebEngineContext()
 #endif
 
     base::CommandLine* parsedCommandLine = commandLine();
-
+    setupProxyPac(parsedCommandLine);
     parsedCommandLine->AppendSwitchPath(switches::kBrowserSubprocessPath, WebEngineLibraryInfo::getPath(content::CHILD_PROCESS_EXE));
 
     // Enable sandboxing on OS X and Linux (Desktop / Embedded) by default.
@@ -506,20 +534,6 @@ WebEngineContext::WebEngineContext()
     }
 
     parsedCommandLine->AppendSwitch(switches::kEnableThreadedCompositing);
-    // These are currently only default on OS X, and we don't support them:
-    parsedCommandLine->AppendSwitch(switches::kDisableZeroCopy);
-    parsedCommandLine->AppendSwitch(switches::kDisableGpuMemoryBufferCompositorResources);
-
-    // Enabled on OS X and Linux but currently not working. It worked in 5.7 on OS X.
-    parsedCommandLine->AppendSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
-
-#if defined(Q_OS_MACOS)
-    // Accelerated decoding currently does not work on macOS due to issues with OpenGL Rectangle
-    // texture support. See QTBUG-60002.
-    parsedCommandLine->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
-    // Same problem with Pepper using OpenGL images.
-    parsedCommandLine->AppendSwitch(switches::kDisablePepper3DImageChromium);
-#endif
 
 #if defined(Q_OS_WIN)
     // This switch is used in Chromium's gl_context_wgl.cc file to determine whether to create
@@ -547,6 +561,11 @@ WebEngineContext::WebEngineContext()
     bool threadedGpu = false;
 #ifndef QT_NO_OPENGL
     threadedGpu = QOpenGLContext::supportsThreadedOpenGL();
+#if defined(Q_OS_MACOS)
+    // QtBase disabled it when building on 10.14+, unfortunately we still need it
+    // until we have fixed single-threaded viz-display-compositor.
+    threadedGpu = true;
+#endif
 #endif
     threadedGpu = threadedGpu && !qEnvironmentVariableIsSet(kDisableInProcGpuThread);
 
@@ -568,23 +587,24 @@ WebEngineContext::WebEngineContext()
     // The video-capture service is not functioning at this moment (since 69)
     appendToFeatureList(disableFeatures, features::kMojoVideoCapture.name);
 
-    // We do not yet support the network-service, but it is enabled by default since 75.
-    appendToFeatureList(disableFeatures, network::features::kNetworkService.name);
-    // BlinkGenPropertyTrees is enabled by default in 75, but causes regressions.
-    appendToFeatureList(disableFeatures, blink::features::kBlinkGenPropertyTrees.name);
-
-#if QT_CONFIG(webengine_printing_and_pdf)
-    appendToFeatureList(disableFeatures, printing::features::kUsePdfCompositorServiceForPrint.name);
+#if defined(Q_OS_LINUX)
+    // broken and crashy (even upstream):
+    appendToFeatureList(disableFeatures, features::kFontSrcLocalMatching.name);
 #endif
+
+    // We don't support the skia renderer (enabled by default on Linux since 80)
+    appendToFeatureList(disableFeatures, features::kUseSkiaRenderer.name);
+
+    appendToFeatureList(disableFeatures, network::features::kDnsOverHttpsUpgrade.name);
 
     // Explicitly tell Chromium about default-on features we do not support
     appendToFeatureList(disableFeatures, features::kBackgroundFetch.name);
-    appendToFeatureList(disableFeatures, features::kOriginTrials.name);
     appendToFeatureList(disableFeatures, features::kSmsReceiver.name);
     appendToFeatureList(disableFeatures, features::kWebAuth.name);
     appendToFeatureList(disableFeatures, features::kWebAuthCable.name);
     appendToFeatureList(disableFeatures, features::kWebPayments.name);
     appendToFeatureList(disableFeatures, features::kWebUsb.name);
+    appendToFeatureList(disableFeatures, media::kPictureInPicture.name);
 
     if (useEmbeddedSwitches) {
         // embedded switches are based on the switches for Android, see content/browser/android/content_startup_flags.cc
@@ -595,10 +615,25 @@ WebEngineContext::WebEngineContext()
     }
 
     if (!enableViz) {
+        // These are currently only default on OS X, and we don't support them:
+        parsedCommandLine->AppendSwitch(switches::kDisableZeroCopy);
+        parsedCommandLine->AppendSwitch(switches::kDisableGpuMemoryBufferCompositorResources);
+
+        // Enabled on OS X and Linux but currently not working. It worked in 5.7 on OS X.
+        parsedCommandLine->AppendSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
+
+#if defined(Q_OS_MACOS)
+        // Accelerated decoding currently does not work on macOS due to issues with OpenGL Rectangle
+        // texture support. See QTBUG-60002.
+        parsedCommandLine->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+        // Same problem with Pepper using OpenGL images.
+        parsedCommandLine->AppendSwitch(switches::kDisablePepper3DImageChromium);
+#endif
+
         // Viz Display Compositor is enabled by default since 73. Doesn't work for us (also implies SurfaceSynchronization)
         appendToFeatureList(disableFeatures, features::kVizDisplayCompositor.name);
         // VideoSurfaceLayer is enabled by default since 75. We don't support it.
-        appendToFeatureList(disableFeatures, media::kUseSurfaceLayerForVideo.name);
+        appendToFeatureList(enableFeatures, media::kDisableSurfaceLayerForVideo.name);
     }
 
     appendToFeatureSwitch(parsedCommandLine, switches::kDisableFeatures, disableFeatures);
@@ -715,6 +750,7 @@ WebEngineContext::WebEngineContext()
     m_mainDelegate->PostEarlyInitialization(false);
     content::StartBrowserThreadPool();
     content::BrowserTaskExecutor::PostFeatureListSetup();
+    tracing::InitTracingPostThreadPoolStartAndFeatureList();
     m_discardableSharedMemoryManager = std::make_unique<discardable_memory::DiscardableSharedMemoryManager>();
     m_serviceManagerEnvironment = std::make_unique<content::ServiceManagerEnvironment>(content::BrowserTaskExecutor::CreateIOThread());
     m_startupData = m_serviceManagerEnvironment->CreateBrowserStartupData();

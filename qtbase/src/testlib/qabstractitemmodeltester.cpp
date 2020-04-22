@@ -288,6 +288,12 @@ QAbstractItemModelTester::FailureReportingMode QAbstractItemModelTester::failure
     return d->failureReportingMode;
 }
 
+bool QAbstractItemModelTester::verify(bool statement, const char *statementStr, const char *description, const char *file, int line)
+{
+    Q_D(QAbstractItemModelTester);
+    return d->verify(statement, statementStr, description, file, line);
+}
+
 QAbstractItemModelTesterPrivate::QAbstractItemModelTesterPrivate(QAbstractItemModel *model, QAbstractItemModelTester::FailureReportingMode failureReportingMode)
     : model(model),
       failureReportingMode(failureReportingMode),
@@ -605,7 +611,7 @@ void QAbstractItemModelTesterPrivate::data()
     // Check that the alignment is one we know about
     QVariant textAlignmentVariant = model->data(model->index(0, 0), Qt::TextAlignmentRole);
     if (textAlignmentVariant.isValid()) {
-        Qt::Alignment alignment = textAlignmentVariant.value<Qt::Alignment>();
+        Qt::Alignment alignment = qvariant_cast<Qt::Alignment>(textAlignmentVariant);
         MODELTESTER_COMPARE(alignment, (alignment & (Qt::AlignHorizontal_Mask | Qt::AlignVertical_Mask)));
     }
 

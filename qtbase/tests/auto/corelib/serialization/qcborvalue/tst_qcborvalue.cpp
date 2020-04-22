@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 Intel Corporation.
+** Copyright (C) 2020 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -40,6 +40,8 @@
 #include <QtCore/qcborvalue.h>
 #include <QtTest>
 
+#include <QtCore/private/qbytearray_p.h>
+
 Q_DECLARE_METATYPE(QCborKnownTags)
 Q_DECLARE_METATYPE(QCborValue)
 Q_DECLARE_METATYPE(QCborValue::EncodingOptions)
@@ -63,6 +65,7 @@ private slots:
     void arrayEmptyDetach();
     void arrayInitializerList();
     void arrayMutation();
+    void arrayMutateWithCopies();
     void arrayPrepend();
     void arrayInsertRemove_data() { basics_data(); }
     void arrayInsertRemove();
@@ -77,6 +80,7 @@ private slots:
     void mapEmptyDetach();
     void mapSimpleInitializerList();
     void mapMutation();
+    void mapMutateWithCopies();
     void mapStringValues();
     void mapStringKeys();
     void mapInsertRemove_data() { basics_data(); }
@@ -102,6 +106,10 @@ private slots:
     void fromCborStreamReaderIODevice();
     void validation_data();
     void validation();
+    void hugeDeviceValidation_data();
+    void hugeDeviceValidation();
+    void recursionLimit_data();
+    void recursionLimit();
     void toDiagnosticNotation_data();
     void toDiagnosticNotation();
 
@@ -377,8 +385,20 @@ void tst_QCborValue::copyCompare()
 {
     QFETCH(QCborValue, v);
     QCborValue other = v;
+
+    // self-moving
+    v = std::move(v);
+    QCOMPARE(v, other); // make sure it's still valid
+
+    // moving
+    v = std::move(other);
+    other = std::move(v);
+
+    // normal copying
+    other = v;
     other = v;
     v = other;
+
 
     QCOMPARE(v.compare(other), 0);
     QCOMPARE(v, other);
@@ -810,6 +830,59 @@ void tst_QCborValue::arrayMutation()
     QCOMPARE(val[2].toArray().size(), 5);
 }
 
+void tst_QCborValue::arrayMutateWithCopies()
+{
+    {
+        QCborArray array;
+        array.append("TEST");
+        QCOMPARE(array.size(), 1);
+        QCOMPARE(array.at(0), "TEST");
+
+        array.append(array.at(0));
+        QCOMPARE(array.size(), 2);
+        QCOMPARE(array.at(0), "TEST");
+        QCOMPARE(array.at(1), "TEST");
+    }
+    {
+        QCborArray array;
+        array.append("TEST");
+        QCOMPARE(array.size(), 1);
+        QCOMPARE(array.at(0), "TEST");
+
+        // same as previous, but with prepend() not append()
+        array.prepend(array.at(0));
+        QCOMPARE(array.size(), 2);
+        QCOMPARE(array.at(0), "TEST");
+        QCOMPARE(array.at(1), "TEST");
+    }
+    {
+        QCborArray array;
+        array.append("TEST");
+        QCOMPARE(array.size(), 1);
+        QCOMPARE(array.at(0), "TEST");
+
+        // same as previous, but using a QCborValueRef
+        QCborValueRef rv = array[0];
+        array.prepend(rv);
+        QCOMPARE(array.size(), 2);
+        QCOMPARE(array.at(0), "TEST");
+        QCOMPARE(array.at(1), "TEST");
+    }
+    {
+        QCborArray array;
+        array.append("TEST");
+        QCOMPARE(array.size(), 1);
+        QCOMPARE(array.at(0), "TEST");
+
+        // same as previous, but now extending the array
+        QCborValueRef rv = array[0];
+        array[2] = rv;
+        QCOMPARE(array.size(), 3);
+        QCOMPARE(array.at(0), "TEST");
+        QCOMPARE(array.at(2), "TEST");
+    }
+}
+
 void tst_QCborValue::mapMutation()
 {
     QCborMap m;
@@ -915,6 +988,76 @@ void tst_QCborValue::mapMutation()
     QCOMPARE(val[any].toMap().size(), 1);
     QVERIFY(val[any][3].isMap());
     QCOMPARE(val[any][3].toMap().size(), 1);
+}
+
+void tst_QCborValue::mapMutateWithCopies()
+{
+    {
+        QCborMap map;
+        map[QLatin1String("prop1")] = "TEST";
+        QCOMPARE(map.size(), 1);
+        QCOMPARE(map.value("prop1"), "TEST");
+
+        map[QLatin1String("prop2")] = map.value("prop1");
+        QCOMPARE(map.size(), 2);
+        QCOMPARE(map.value("prop1"), "TEST");
+        QCOMPARE(map.value("prop2"), "TEST");
+    }
+    {
+        // see QTBUG-83366
+        QCborMap map;
+        map[QLatin1String("value")] = "TEST";
+        QCOMPARE(map.size(), 1);
+        QCOMPARE(map.value("value"), "TEST");
+
+        QCborValue v = map.value("value");
+        map[QLatin1String("prop2")] = v;
+        QCOMPARE(map.size(), 2);
+        QCOMPARE(map.value("value"), "TEST");
+        QCOMPARE(map.value("prop2"), "TEST");
+    }
+    {
+        QCborMap map;
+        map[QLatin1String("value")] = "TEST";
+        QCOMPARE(map.size(), 1);
+        QCOMPARE(map.value("value"), "TEST");
+
+        // same as previous, but this is a QJsonValueRef
+        QCborValueRef rv = map[QLatin1String("prop2")];
+        rv = map[QLatin1String("value")];
+        QCOMPARE(map.size(), 2);
+        QCOMPARE(map.value("value"), "TEST");
+        QCOMPARE(map.value("prop2"), "TEST");
+    }
+    {
+        QCborMap map;
+        map[QLatin1String("value")] = "TEST";
+        QCOMPARE(map.size(), 1);
+        QCOMPARE(map.value("value"), "TEST");
+
+        // same as previous, but now we call the operator[] that reallocates
+        // after we create the source QCborValueRef
+        QCborValueRef rv = map[QLatin1String("value")];
+        map[QLatin1String("prop2")] = rv;
+        QCOMPARE(map.size(), 2);
+        QCOMPARE(map.value("value"), "TEST");
+        QCOMPARE(map.value("prop2"), "TEST");
+    }
+    {
+        QCborMap map;
+        map[QLatin1String("value")] = "TEST";
+        QCOMPARE(map.size(), 1);
+        QCOMPARE(map.value("value"), "TEST");
+
+        QCborValueRef v = map[QLatin1String("value")];
+        QCborMap map2 = map;
+        map.insert(QLatin1String("prop2"), v);
+        QCOMPARE(map.size(), 2);
+        QCOMPARE(map.value("value"), "TEST");
+        QCOMPARE(map.value("prop2"), "TEST");
+        QCOMPARE(map2.size(), 1);
+        QCOMPARE(map2.value("value"), "TEST");
+    }
 }
 
 void tst_QCborValue::arrayPrepend()
@@ -1687,37 +1830,125 @@ void tst_QCborValue::fromCborStreamReaderIODevice()
     fromCbor_common(doCheck);
 }
 
+#include "../cborlargedatavalidation.cpp"
+
 void tst_QCborValue::validation_data()
 {
+    // Add QCborStreamReader-specific limitations due to use of QByteArray and
+    // QString, which are allocated by QArrayData::allocate().
+    const qsizetype MaxInvalid = std::numeric_limits<QByteArray::size_type>::max();
+    const qsizetype MinInvalid = MaxByteArraySize + 1;
     addValidationColumns();
-    addValidationData();
+    addValidationData(MinInvalid);
+    addValidationLargeData(MinInvalid, MaxInvalid);
 
     // These tests say we have arrays and maps with very large item counts.
     // They are meant to ensure we don't pre-allocate a lot of memory
     // unnecessarily and possibly crash the application. The actual number of
     // elements in the stream is only 2, so we should get an unexpected EOF
-    // error. QCborValue internally uses 16 bytes per element, so we get to
-    // 2 GB at 2^27 elements.
-    QTest::addRow("very-large-array-no-overflow") << raw("\x9a\x07\xff\xff\xff" "\0\0");
-    QTest::addRow("very-large-array-overflow1") << raw("\x9a\x40\0\0\0" "\0\0");
+    // error. QCborValue internally uses 16 bytes per element, so we get to 2
+    // GB at 2^27 elements (32-bit) or, theoretically, 2^63 bytes at 2^59
+    // elements (64-bit).
+    if (sizeof(QVector<int>::size_type) == sizeof(int)) {
+        // 32-bit sizes (Qt 5 and 32-bit platforms)
+        QTest::addRow("very-large-array-no-overflow") << raw("\x9a\x07\xff\xff\xff" "\0\0") << 0 << CborErrorUnexpectedEOF;
+        QTest::addRow("very-large-array-overflow1") << raw("\x9a\x40\0\0\0" "\0\0") << 0 << CborErrorUnexpectedEOF;
 
-    // this makes sure we don't accidentally clip to 32-bit: sending 2^32+2 elements
-    QTest::addRow("very-large-array-overflow2") << raw("\x9b\0\0\0\1""\0\0\0\2" "\0\0");
+        // this makes sure we don't accidentally clip to 32-bit: sending 2^32+2 elements
+        QTest::addRow("very-large-array-overflow2") << raw("\x9b\0\0\0\1""\0\0\0\2" "\0\0") << 0 << CborErrorDataTooLarge;
+    } else {
+        // 64-bit Qt 6
+        QTest::addRow("very-large-array-no-overflow") << raw("\x9b\x07\xff\xff\xff" "\xff\xff\xff\xff" "\0\0");
+        QTest::addRow("very-large-array-overflow") << raw("\x9b\x40\0\0\0" "\0\0\0\0" "\0\0");
+    }
 }
 
 void tst_QCborValue::validation()
 {
     QFETCH(QByteArray, data);
+    QFETCH(CborError, expectedError);
+    QCborError error = { QCborError::Code(expectedError) };
 
-    QCborParserError error;
-    QCborValue decoded = QCborValue::fromCbor(data, &error);
-    QVERIFY(error.error != QCborError{});
+    QCborParserError parserError;
+    QCborValue decoded = QCborValue::fromCbor(data, &parserError);
+    QCOMPARE(parserError.error, error);
 
     if (data.startsWith('\x81')) {
         // decode without the array prefix
-        decoded = QCborValue::fromCbor(data.mid(1), &error);
-        QVERIFY(error.error != QCborError{});
+        char *ptr = const_cast<char *>(data.constData());
+        QByteArray mid = QByteArray::fromRawData(ptr + 1, data.size() - 1);
+        decoded = QCborValue::fromCbor(mid, &parserError);
+        QCOMPARE(parserError.error, error);
     }
+}
+
+void tst_QCborValue::hugeDeviceValidation_data()
+{
+    addValidationHugeDevice(MaxByteArraySize + 1, MaxStringSize + 1);
+}
+
+void tst_QCborValue::hugeDeviceValidation()
+{
+    QFETCH(QSharedPointer<QIODevice>, device);
+    QFETCH(CborError, expectedError);
+    QCborError error = { QCborError::Code(expectedError) };
+
+    device->open(QIODevice::ReadOnly | QIODevice::Unbuffered);
+    QCborStreamReader reader(device.data());
+    QCborValue decoded = QCborValue::fromCbor(reader);
+    QCOMPARE(reader.lastError(), error);
+}
+
+void tst_QCborValue::recursionLimit_data()
+{
+    constexpr int RecursionAttempts = 4096;
+    QTest::addColumn<QByteArray>("data");
+    QByteArray arrays(RecursionAttempts, char(0x81));
+    QByteArray _arrays(RecursionAttempts, char(0x9f));
+    QByteArray maps(RecursionAttempts, char(0xa1));
+    QByteArray _maps(RecursionAttempts, char(0xbf));
+    QByteArray tags(RecursionAttempts, char(0xc0));
+
+    QTest::newRow("array-nesting-too-deep") << arrays;
+    QTest::newRow("_array-nesting-too-deep") << _arrays;
+    QTest::newRow("map-nesting-too-deep") << maps;
+    QTest::newRow("_map-nesting-too-deep") << _maps;
+    QTest::newRow("tag-nesting-too-deep") << tags;
+
+    QByteArray mixed(5 * RecursionAttempts, Qt::Uninitialized);
+    char *ptr = mixed.data();
+    for (int i = 0; i < RecursionAttempts; ++i) {
+        quint8 type = qBound(quint8(QCborStreamReader::Array), quint8(i & 0x80), quint8(QCborStreamReader::Tag));
+        quint8 additional_info = i & 0x1f;
+        if (additional_info == 0x1f)
+            (void)additional_info;      // leave it
+        else if (additional_info > 0x1a)
+            additional_info = 0x1a;
+        else if (additional_info < 1)
+            additional_info = 1;
+
+        *ptr++ = type | additional_info;
+        if (additional_info == 0x18) {
+            *ptr++ = uchar(i);
+        } else if (additional_info == 0x19) {
+            qToBigEndian(ushort(i), ptr);
+            ptr += 2;
+        } else if (additional_info == 0x1a) {
+            qToBigEndian(uint(i), ptr);
+            ptr += 4;
+        }
+    }
+
+    QTest::newRow("mixed-nesting-too-deep") << mixed;
+}
+
+void tst_QCborValue::recursionLimit()
+{
+    QFETCH(QByteArray, data);
+
+    QCborParserError error;
+    QCborValue decoded = QCborValue::fromCbor(data, &error);
+    QCOMPARE(error.error, QCborError::NestingTooDeep);
 }
 
 void tst_QCborValue::toDiagnosticNotation_data()

@@ -1272,8 +1272,10 @@ inline int qIntCast(float f) { return int(f); }
 /*
   Reentrant versions of basic rand() functions for random number generation
 */
-Q_CORE_EXPORT void qsrand(uint seed);
-Q_CORE_EXPORT int qrand();
+#if QT_DEPRECATED_SINCE(5, 15)
+Q_CORE_EXPORT QT_DEPRECATED_VERSION_X_5_15("use QRandomGenerator instead") void qsrand(uint seed);
+Q_CORE_EXPORT QT_DEPRECATED_VERSION_X_5_15("use QRandomGenerator instead") int qrand();
+#endif
 
 #define QT_MODULE(x)
 

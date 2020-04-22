@@ -29,8 +29,8 @@
 #include <QtTest/qtest.h>
 #include <QtTest/qsignalspy.h>
 #include <QtCore/qregularexpression.h>
+#include <QtCore/qabstractitemmodel.h>
 #include <QtQml/private/qqmlengine_p.h>
-#include <QtQmlModels/private/qqmltablemodel_p.h>
 #include <QtQml/qqmlcomponent.h>
 #include <QtQuick/qquickitem.h>
 #include <QtQuick/qquickview.h>
@@ -59,7 +59,6 @@ private slots:
     void dataAndEditing();
     void omitTableModelColumnIndex();
     void complexRow();
-    void appendRowWithDouble();
 };
 
 void tst_QQmlTableModel::appendRemoveRow()
@@ -69,7 +68,7 @@ void tst_QQmlTableModel::appendRemoveRow()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel") .value<QAbstractTableModel *>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -214,7 +213,7 @@ void tst_QQmlTableModel::appendRowToEmptyModel()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 0);
     QCOMPARE(model->columnCount(), 2);
@@ -249,7 +248,7 @@ void tst_QQmlTableModel::clear()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -288,7 +287,7 @@ void tst_QQmlTableModel::getRow()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -319,7 +318,7 @@ void tst_QQmlTableModel::insertRow()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -475,7 +474,7 @@ void tst_QQmlTableModel::moveRow()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->columnCount(), 2);
     QCOMPARE(model->rowCount(), 2);
@@ -603,7 +602,7 @@ void tst_QQmlTableModel::setRow()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->columnCount(), 2);
     QCOMPARE(model->rowCount(), 2);
@@ -763,7 +762,7 @@ void tst_QQmlTableModel::setDataThroughDelegate()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -826,7 +825,7 @@ void tst_QQmlTableModel::setRowsImperatively()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 0);
     QCOMPARE(model->columnCount(), 2);
@@ -863,7 +862,7 @@ void tst_QQmlTableModel::setRowsMultipleTimes()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("testModel").value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -920,7 +919,7 @@ void tst_QQmlTableModel::dataAndEditing()
     view.show();
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QQmlTableModel *model = view.rootObject()->property("model").value<QQmlTableModel*>();
+    auto *model = view.rootObject()->property("model").value<QAbstractTableModel*>();
     QVERIFY(model);
 
     const QHash<int, QByteArray> roleNames = model->roleNames();
@@ -940,7 +939,7 @@ void tst_QQmlTableModel::omitTableModelColumnIndex()
     QQmlComponent component(&engine, testFileUrl("omitTableModelColumnIndex.qml"));
     QCOMPARE(component.status(), QQmlComponent::Ready);
 
-    QScopedPointer<QQmlTableModel> model(qobject_cast<QQmlTableModel*>(component.create()));
+    QScopedPointer<QAbstractTableModel> model(qobject_cast<QAbstractTableModel*>(component.create()));
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -964,7 +963,7 @@ void tst_QQmlTableModel::complexRow()
     QCOMPARE(tableView->rows(), 2);
     QCOMPARE(tableView->columns(), 2);
 
-    QQmlTableModel *model = tableView->model().value<QQmlTableModel*>();
+    auto *model = tableView->model().value<QAbstractTableModel*>();
     QVERIFY(model);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(model->columnCount(), 2);
@@ -974,76 +973,6 @@ void tst_QQmlTableModel::complexRow()
     QCOMPARE(model->data(model->index(0, 1, QModelIndex()), roleNames.key("display")).toInt(), 22);
     QCOMPARE(model->data(model->index(1, 0, QModelIndex()), roleNames.key("display")).toString(), QLatin1String("Oliver"));
     QCOMPARE(model->data(model->index(1, 1, QModelIndex()), roleNames.key("display")).toInt(), 33);
-}
-
-void tst_QQmlTableModel::appendRowWithDouble()
-{
-    QQuickView view(testFileUrl("intAndDouble.qml"));
-    QCOMPARE(view.status(), QQuickView::Ready);
-    view.show();
-    QVERIFY(QTest::qWaitForWindowActive(&view));
-
-    QQmlTableModel *model = view.rootObject()->property("testModel").value<QQmlTableModel*>();
-    QVERIFY(model);
-    QCOMPARE(model->rowCount(), 2);
-    QCOMPARE(model->columnCount(), 2);
-
-    QSignalSpy columnCountSpy(model, SIGNAL(columnCountChanged()));
-    QVERIFY(columnCountSpy.isValid());
-
-    QSignalSpy rowCountSpy(model, SIGNAL(rowCountChanged()));
-    QVERIFY(rowCountSpy.isValid());
-
-    QQuickTableView *tableView = view.rootObject()->property("tableView").value<QQuickTableView*>();
-    QVERIFY(tableView);
-    QCOMPARE(tableView->rows(), 2);
-    QCOMPARE(tableView->columns(), 2);
-
-    QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "appendBanana"));
-    QCOMPARE(model->rowCount(), 3);
-    QCOMPARE(model->columnCount(), 2);
-    const QHash<int, QByteArray> roleNames = model->roleNames();
-    const int roleKey = roleNames.key("display");
-    QCOMPARE(model->data(model->index(0, 1, QModelIndex()), roleKey).toString(),
-             QLatin1String("1"));
-    QCOMPARE(model->data(model->index(2, 0, QModelIndex()), roleKey).toString(),
-             QLatin1String("Banana"));
-    QCOMPARE(model->data(model->index(2, 1, QModelIndex()), roleKey).toDouble(), 3.5);
-    QCOMPARE(model->data(model->index(2, 1, QModelIndex()), roleKey).toString(),
-             QLatin1String("3.5"));
-    QCOMPARE(columnCountSpy.count(), 0);
-    QCOMPARE(rowCountSpy.count(), 1);
-    QTRY_COMPARE(tableView->rows(), 3);
-    QCOMPARE(tableView->columns(), 2);
-
-    rowCountSpy.clear();
-
-    QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "appendStrawberry"));
-    QCOMPARE(model->rowCount(), 4);
-    QCOMPARE(model->columnCount(), 2);
-    QCOMPARE(model->data(model->index(3, 0, QModelIndex()), roleKey).toString(),
-             QLatin1String("Strawberry"));
-    QCOMPARE(model->data(model->index(3, 1, QModelIndex()), roleKey).toDouble(), 5);
-    QCOMPARE(model->data(model->index(3, 1, QModelIndex()), roleKey).toString(),
-             QLatin1String("5"));
-    QCOMPARE(columnCountSpy.count(), 0);
-    QCOMPARE(rowCountSpy.count(), 1);
-    QTRY_COMPARE(tableView->rows(), 4);
-    QCOMPARE(tableView->columns(), 2);
-
-    rowCountSpy.clear();
-    QTest::ignoreMessage(QtWarningMsg,
-                         QRegularExpression(".*appendRow\\(\\): failed converting value "
-                                            "QVariant\\(QString, \"Invalid\"\\) set at column 1 with "
-                                            "role \"QString\" to \"int\""));
-    QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "appendInvalid"));
-    // Nothing should change
-    QCOMPARE(model->rowCount(), 4);
-    QCOMPARE(model->columnCount(), 2);
-    QCOMPARE(columnCountSpy.count(), 0);
-    QCOMPARE(rowCountSpy.count(), 0);
-    QCOMPARE(tableView->rows(), 4);
-    QCOMPARE(tableView->columns(), 2);
 }
 
 QTEST_MAIN(tst_QQmlTableModel)

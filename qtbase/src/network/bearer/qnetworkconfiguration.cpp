@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <QtNetwork/private/qtnetworkglobal_p.h>
+
 #include "qnetworkconfiguration.h"
 #include "qnetworkconfiguration_p.h"
 #include <QDebug>
@@ -45,6 +47,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \class QNetworkConfiguration
+    \obsolete
 
     \brief The QNetworkConfiguration class provides an abstraction of one or more access point configurations.
 
@@ -209,7 +212,7 @@ QT_BEGIN_NAMESPACE
     \sa isValid()
 */
 QNetworkConfiguration::QNetworkConfiguration()
-    : d(0)
+    : d(nullptr)
 {
 }
 

@@ -71,6 +71,7 @@ private Q_SLOTS:
     void urlSchemeHandlerInstallation();
     void urlSchemeHandlerXhrStatus();
     void urlSchemeHandlerScriptModule();
+    void urlSchemeHandlerLongReply();
     void customUserAgent();
     void httpAcceptLanguage();
     void downloadItem();
@@ -172,7 +173,6 @@ public:
 
     ~AutoDir() { removeRecursively(); }
 };
-
 qint64 totalSize(QDir dir)
 {
     qint64 sum = 0;
@@ -237,6 +237,7 @@ static bool loadSync(QWebEngineView *view, const QUrl &url, bool ok = true)
 void tst_QWebEngineProfile::clearDataFromCache()
 {
     TestServer server;
+    QSignalSpy serverSpy(&server, &HttpServer::newRequest);
     QVERIFY(server.start());
 
     AutoDir cacheDir("./tst_QWebEngineProfile_clearDataFromCache");
@@ -247,6 +248,8 @@ void tst_QWebEngineProfile::clearDataFromCache()
 
     QWebEnginePage page(&profile);
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
+    // Wait for GET /favicon.ico
+    QTRY_COMPARE(serverSpy.size(), 3);
 
     QVERIFY(cacheDir.exists("Cache"));
     qint64 sizeBeforeClear = totalSize(cacheDir);
@@ -355,7 +358,7 @@ protected:
             memcpy(data, m_data.constData() + m_bytesRead, len);
             m_bytesAvailable -= len;
             m_bytesRead += len;
-        } else if (m_data.size() > 0)
+        } else if (atEnd())
             return -1;
 
         return len;
@@ -760,6 +763,31 @@ void tst_QWebEngineProfile::urlSchemeHandlerScriptModule()
     QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("test")).toString(), QStringLiteral("SUCCESS"));
 }
 
+class LongReplyUrlSchemeHandler : public QWebEngineUrlSchemeHandler
+{
+public:
+    LongReplyUrlSchemeHandler(QObject *parent = nullptr) : QWebEngineUrlSchemeHandler(parent) {}
+    ~LongReplyUrlSchemeHandler() {}
+
+    void requestStarted(QWebEngineUrlRequestJob *job)
+    {
+        QBuffer *buffer = new QBuffer(job);
+        buffer->setData(QByteArray(128 * 1024, ' ') +
+                        "<html><head><title>Minify this!</title></head></html>");
+        job->reply("text/html", buffer);
+    }
+};
+
+void tst_QWebEngineProfile::urlSchemeHandlerLongReply()
+{
+    LongReplyUrlSchemeHandler handler;
+    QWebEngineProfile profile;
+    profile.installUrlSchemeHandler("aviancarrier", &handler);
+    QWebEnginePage page(&profile);
+    page.load(QUrl("aviancarrier:/"));
+    QTRY_COMPARE(page.title(), QString("Minify this!"));
+}
+
 void tst_QWebEngineProfile::customUserAgent()
 {
     QString defaultUserAgent = QWebEngineProfile::defaultProfile()->httpUserAgent();
@@ -907,8 +935,6 @@ void tst_QWebEngineProfile::changeHttpAcceptLanguage()
 
 void tst_QWebEngineProfile::changeUseForGlobalCertificateVerification()
 {
-    QSKIP("Needs 3rdparty fix");
-
     TestServer server;
     QVERIFY(server.start());
 
@@ -922,7 +948,8 @@ void tst_QWebEngineProfile::changeUseForGlobalCertificateVerification()
     profile.setUseForGlobalCertificateVerification(true);
     page.reset(new QWebEnginePage(&profile));
     QVERIFY(loadSync(page.get(), server.url("/hedgehog.html")));
-    QVERIFY(server.stop());
+    // Don't check for error: there can be disconnects during GET hedgehog.png.
+    server.stop();
 }
 
 void tst_QWebEngineProfile::changePersistentCookiesPolicy()
@@ -965,26 +992,32 @@ void tst_QWebEngineProfile::initiator()
     InitiatorSpy handler;
     QWebEngineProfile profile;
     profile.installUrlSchemeHandler("foo", &handler);
-    QWebEnginePage page(&profile);
+    QWebEnginePage page(&profile, nullptr);
     QSignalSpy loadFinishedSpy(&page, SIGNAL(loadFinished(bool)));
+    page.load(QUrl("about:blank"));
+    QTRY_COMPARE(loadFinishedSpy.count(), 1);
+    loadFinishedSpy.clear();
 
     // about:blank has a unique origin, so initiator should be QUrl("null")
     evaluateJavaScriptSync(&page, "window.location = 'foo:bar'");
-    QVERIFY(loadFinishedSpy.wait());
+    QTRY_COMPARE(loadFinishedSpy.count(), 1);
+    loadFinishedSpy.clear();
     QCOMPARE(handler.initiator, QUrl("null"));
 
     page.setHtml("", QUrl("http://test:123/foo%20bar"));
-    QVERIFY(loadFinishedSpy.wait());
+    QTRY_COMPARE(loadFinishedSpy.count(), 1);
+    loadFinishedSpy.clear();
 
     // baseUrl determines the origin, so QUrl("http://test:123")
     evaluateJavaScriptSync(&page, "window.location = 'foo:bar'");
-    QVERIFY(loadFinishedSpy.wait());
+    QTRY_COMPARE(loadFinishedSpy.count(), 1);
+    loadFinishedSpy.clear();
     QCOMPARE(handler.initiator, QUrl("http://test:123"));
 
     // Directly calling load/setUrl should have initiator QUrl(), meaning
     // browser-initiated, trusted.
     page.load(QUrl("foo:bar"));
-    QVERIFY(loadFinishedSpy.wait());
+    QTRY_COMPARE(loadFinishedSpy.count(), 1);
     QCOMPARE(handler.initiator, QUrl());
 }
 

@@ -1171,8 +1171,6 @@ bool QQuickTextInput::hasAcceptableInput() const
     Note that if there is a \l validator or \l inputMask set on the text
     input, the signal will only be emitted if the input is in an acceptable
     state.
-
-    The corresponding handler is \c onAccepted.
 */
 
 /*!
@@ -1184,8 +1182,6 @@ bool QQuickTextInput::hasAcceptableInput() const
     inputMask set on the text input and enter/return is pressed, this
     signal will only be emitted if the input follows
     the inputMask and the validator returns an acceptable state.
-
-    The corresponding handler is \c onEditingFinished.
 */
 
 /*!
@@ -1195,8 +1191,6 @@ bool QQuickTextInput::hasAcceptableInput() const
     This signal is emitted whenever the text is edited. Unlike \c textChanged(),
     this signal is not emitted when the text is changed programmatically, for example,
     by changing the value of the \c text property or by calling \c clear().
-
-    The corresponding handler is \c onTextEdited.
 */
 
 #if QT_CONFIG(im)
@@ -2901,7 +2895,8 @@ void QQuickTextInputPrivate::updateDisplayText(bool forceUpdate)
     // characters)
     QChar* uc = str.data();
     for (int i = 0; i < str.length(); ++i) {
-        if (uc[i] == QChar::LineSeparator
+        if ((uc[i].unicode() < 0x20 && uc[i] != QChar::Tabulation)
+            || uc[i] == QChar::LineSeparator
             || uc[i] == QChar::ParagraphSeparator
             || uc[i] == QChar::ObjectReplacementCharacter)
             uc[i] = QChar(0x0020);
@@ -3956,7 +3951,7 @@ bool QQuickTextInputPrivate::isValidInput(QChar key, QChar mask) const
             return true;
         break;
     case 'X':
-        if (key.isPrint())
+        if (key.isPrint() && key != m_blank)
             return true;
         break;
     case 'x':

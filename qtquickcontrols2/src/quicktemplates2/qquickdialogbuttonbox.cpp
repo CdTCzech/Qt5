@@ -545,7 +545,7 @@ void QQuickDialogButtonBox::setAlignment(Qt::Alignment alignment)
 
 void QQuickDialogButtonBox::resetAlignment()
 {
-    setAlignment(0);
+    setAlignment({});
 }
 
 /*!

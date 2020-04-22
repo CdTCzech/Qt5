@@ -212,8 +212,11 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
     QByteArray m_lightPos;
     QByteArray m_lightUp;
     QByteArray m_lightRt;
+    QByteArray m_lightConeAngle;
+    QByteArray m_lightInnerConeAngle;
     QByteArray m_relativeDistance;
     QByteArray m_relativeDirection;
+    QByteArray m_spotAngle;
 
     QByteArray m_shadowMapStem;
     QByteArray m_shadowCubeStem;
@@ -486,7 +489,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
     bool maybeAddMaterialFresnel(QSSGShaderStageGeneratorInterface &fragmentShader, QSSGDataView<quint32> inKey, bool inFragmentHasSpecularAmount)
     {
         if (m_defaultMaterialShaderKeyProperties.m_fresnelEnabled.getValue(inKey)) {
-            if (inFragmentHasSpecularAmount == false)
+            if (!inFragmentHasSpecularAmount)
                 fragmentShader << "    float specularAmount = 1.0;\n";
             inFragmentHasSpecularAmount = true;
             fragmentShader.addInclude("defaultMaterialFresnel.glsllib");
@@ -522,6 +525,15 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                 m_lightUp.append("_up");
                 m_lightRt = lightStem;
                 m_lightRt.append("_right");
+            } else if (inLight.m_lightType == QSSGRenderLight::Type::Spot) {
+                m_lightPos = lightStem;
+                m_lightPos.append("_position");
+                m_lightAttenuation = lightStem;
+                m_lightAttenuation.append("_attenuation");
+                m_lightConeAngle = lightStem;
+                m_lightConeAngle.append("_coneAngle");
+                m_lightInnerConeAngle = lightStem;
+                m_lightInnerConeAngle.append("_innerConeAngle");
             }
         } else {
             QByteArray lightStem = "lights";
@@ -551,6 +563,19 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                 m_lightUp.append("up");
                 m_lightRt = lightStem;
                 m_lightRt.append("right");
+            } else if (inLight.m_lightType == QSSGRenderLight::Type::Spot) {
+                m_lightPos = lightStem;
+                m_lightPos.append("position");
+                m_lightConstantAttenuation = lightStem;
+                m_lightConstantAttenuation.append("constantAttenuation");
+                m_lightLinearAttenuation = lightStem;
+                m_lightLinearAttenuation.append("linearAttenuation");
+                m_lightQuadraticAttenuation = lightStem;
+                m_lightQuadraticAttenuation.append("quadraticAttenuation");
+                m_lightConeAngle = lightStem;
+                m_lightConeAngle.append("coneAngle");
+                m_lightInnerConeAngle = lightStem;
+                m_lightInnerConeAngle.append("innerConeAngle");
             }
         }
     }
@@ -710,11 +735,13 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
         const bool specularEnabled = material()->isSpecularEnabled();
         bool vertexColorsEnabled = material()->isVertexColorsEnabled();
 
+        const auto &keyProps = m_defaultMaterialShaderKeyProperties;
+
         bool hasLighting = material()->hasLighting();
-        bool isDoubleSided = m_defaultMaterialShaderKeyProperties.m_isDoubleSided.getValue(inKey);
+        bool isDoubleSided = keyProps.m_isDoubleSided.getValue(inKey);
         bool hasImage = m_firstImage != nullptr;
 
-        bool hasIblProbe = m_defaultMaterialShaderKeyProperties.m_hasIbl.getValue(inKey);
+        bool hasIblProbe = keyProps.m_hasIbl.getValue(inKey);
         bool hasSpecMap = false;
         bool hasMetalMap = false;
         bool hasEnvMap = false;
@@ -754,6 +781,25 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
         Q_UNUSED(lightmapShadowImage)
         Q_UNUSED(lightmapShadowImageIdx)
         Q_UNUSED(supportStandardDerivatives)
+
+        auto channelStr = [](const QSSGShaderKeyTextureChannel &chProp, const QSSGShaderDefaultMaterialKey &inKey) -> QByteArray {
+            QByteArray ret;
+            switch (chProp.getTextureChannel(inKey)) {
+            case QSSGShaderKeyTextureChannel::R:
+                ret.append(".r");
+                break;
+            case QSSGShaderKeyTextureChannel::G:
+                ret.append(".g");
+                break;
+            case QSSGShaderKeyTextureChannel::B:
+                ret.append(".b");
+                break;
+            case QSSGShaderKeyTextureChannel::A:
+                ret.append(".a");
+                break;
+            }
+            return ret;
+        };
 
         for (QSSGRenderableImage *img = m_firstImage; img != nullptr; img = img->m_nextImage, ++imageIdx) {
             if (img->m_image.isImageTransformIdentity())
@@ -803,7 +849,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
             }
         }
 
-        bool enableFresnel = m_defaultMaterialShaderKeyProperties.m_fresnelEnabled.getValue(inKey);
+        bool enableFresnel = keyProps.m_fresnelEnabled.getValue(inKey);
         bool enableSSAO = false;
         bool enableSSDO = false;
         bool enableShadowMaps = false;
@@ -856,7 +902,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
         // generated.
         // we rely on the linker to strip out what isn't necessary instead of explicitly stripping
         // it for code simplicity.
-        if (hasImage && hasLighting && hasLightmaps) {
+        if (hasImage && hasLighting) {
             fragmentShader.append("    vec3 uTransform;");
             fragmentShader.append("    vec3 vTransform;");
         }
@@ -959,9 +1005,11 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                 else
                     generateImageUVCoordinates(translucencyImageIdx, *translucencyImage);
 
-                fragmentShader << "    vec4 translucent_depth_range = texture2D(" << m_imageSampler << ", " << m_imageFragCoords << ");\n"
-                                  "    float translucent_thickness = translucent_depth_range.r * translucent_depth_range.r;\n"
-                                  "    float translucent_thickness_exp = exp(translucent_thickness * translucentFalloff);\n";
+                const auto &channelProps = keyProps.m_textureChannels[QSSGShaderDefaultMaterialKeyProperties::TranslucencyChannel];
+                fragmentShader << "    float translucent_depth_range = texture2D(" << m_imageSampler
+                               << ", " << m_imageFragCoords << ")" << channelStr(channelProps, inKey) << ";\n";
+                fragmentShader << "    float translucent_thickness = translucent_depth_range * translucent_depth_range;\n";
+                fragmentShader << "    float translucent_thickness_exp = exp(translucent_thickness * translucentFalloff);\n";
             }
 
             fragmentShader.append("    float lightAttenuation = 1.0;");
@@ -994,26 +1042,30 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
 
             fragmentShader << "    float roughnessAmount = material_properties.y;\n";
             if (roughnessImage) {
+                const auto &channelProps = keyProps.m_textureChannels[QSSGShaderDefaultMaterialKeyProperties::RoughnessChannel];
                 if (identityImages.contains(roughnessImage))
                     generateImageUVSampler(roughnessImageIdx);
                 else
                     generateImageUVCoordinates(roughnessImageIdx, *roughnessImage);
-                fragmentShader << "    roughnessAmount *= texture2D(" << m_imageSampler << ", " << m_imageFragCoords << ").g;\n";
+                fragmentShader << "    roughnessAmount *= texture2D(" << m_imageSampler << ", "
+                               << m_imageFragCoords << ")" << channelStr(channelProps, inKey) << ";\n";
             }
 
             fragmentShader << "    float metalnessAmount = material_properties.z;\n";
             if (metalnessImage) {
+                const auto &channelProps = keyProps.m_textureChannels[QSSGShaderDefaultMaterialKeyProperties::MetalnessChannel];
                 if (identityImages.contains(metalnessImage))
                     generateImageUVSampler(metalnessImageIdx);
                 else
                     generateImageUVCoordinates(metalnessImageIdx, *metalnessImage);
-                fragmentShader << "    float sampledMetalness = texture2D(" << m_imageSampler << ", " << m_imageFragCoords << ").b;\n"
-                               << "    metalnessAmount = clamp(metalnessAmount * sampledMetalness, 0.0, 1.0);\n";
+                fragmentShader << "    float sampledMetalness = texture2D(" << m_imageSampler << ", "
+                               << m_imageFragCoords << ")" << channelStr(channelProps, inKey) << ";\n";
+                fragmentShader << "    metalnessAmount = clamp(metalnessAmount * sampledMetalness, 0.0, 1.0);\n";
                 if (!fragmentHasSpecularAmount) {
                     fragmentShader << "    float specularAmount = 1.0;\n";
                     fragmentHasSpecularAmount = true;
                 }
-                fragmentShader << "   specularAmount *= metalnessAmount;\n";
+                fragmentShader << "    specularAmount *= metalnessAmount;\n";
             }
 
             fragmentShader << "    diffuseColor *= (1.0 - metalnessAmount);\n";
@@ -1032,6 +1084,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                 setupLightVariableNames(lightIdx, *lightNode);
                 bool isDirectional = lightNode->m_lightType == QSSGRenderLight::Type::Directional;
                 bool isArea = lightNode->m_lightType == QSSGRenderLight::Type::Area;
+                bool isSpot = lightNode->m_lightType == QSSGRenderLight::Type::Spot;
                 bool isShadow = enableShadowMaps && lightNode->m_castShadow;
 
                 fragmentShader.append("");
@@ -1110,11 +1163,12 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                     fragmentShader << "    global_diffuse_light.rgb += lightAttenuation * diffuseReflectionBSDF(world_normal, " << m_normalizedDirection << ", " << m_lightColor << ".rgb).rgb;\n";
                 } else {
                     vertexShader.generateWorldPosition();
-                    generateShadowMapOcclusion(lightIdx, enableShadowMaps && isShadow, lightNode->m_lightType);
 
                     if (m_lightsAsSeparateUniforms) {
                         fragmentShader.addUniform(m_lightColor, "vec4");
                         fragmentShader.addUniform(m_lightPos, "vec4");
+                        if (isSpot)
+                            fragmentShader.addUniform(m_lightDirection, "vec4");
                     }
 
                     m_relativeDirection = tempStr;
@@ -1129,6 +1183,21 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                     fragmentShader << "    vec3 " << m_relativeDirection << " = varWorldPos - " << m_lightPos << ".xyz;\n"
                                       "    float " << m_relativeDistance << " = length(" << m_relativeDirection << ");\n"
                                       "    vec3 " << m_normalizedDirection << " = " << m_relativeDirection << " / " << m_relativeDistance << ";\n";
+
+                    if (isSpot) {
+                        m_spotAngle = tempStr;
+                        m_spotAngle.append("_spotAngle");
+
+                        if (m_lightsAsSeparateUniforms) {
+                            fragmentShader.addUniform(m_lightConeAngle, "float");
+                            fragmentShader.addUniform(m_lightInnerConeAngle, "float");
+                        }
+                        fragmentShader << "    float " << m_spotAngle << " = dot(" << m_normalizedDirection
+                                       << ", normalize(vec3(" << m_lightDirection << ")));\n";
+                        fragmentShader << "    if (" << m_spotAngle << " > " << m_lightConeAngle << ") {\n";
+                    }
+
+                    generateShadowMapOcclusion(lightIdx, enableShadowMaps && isShadow, lightNode->m_lightType);
 
                     if (enableSSDO) {
                         fragmentShader << "    shadowFac = shadow_map_occl * customMaterialShadow(" << m_normalizedDirection << ", varWorldPos);\n";
@@ -1147,13 +1216,26 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
 
                     addTranslucencyIrradiance(fragmentShader, translucencyImage, false);
 
-                    fragmentShader << "    global_diffuse_light.rgb += lightAttenuation * diffuseReflectionBSDF(world_normal, -" << m_normalizedDirection << ", " << m_lightColor << ".rgb).rgb;\n";
+                    if (isSpot) {
+                        fragmentShader << "    float spotFactor = smoothstep(" << m_lightConeAngle
+                                       << ", " << m_lightInnerConeAngle << ", " << m_spotAngle
+                                       << ");\n";
+                        fragmentShader << "    global_diffuse_light.rgb += spotFactor * ";
+                    } else {
+                        fragmentShader << "    global_diffuse_light.rgb += ";
+                    }
+                    fragmentShader << "lightAttenuation * diffuseReflectionBSDF(world_normal, -"
+                                   << m_normalizedDirection << ", "
+                                   << m_lightColor << ".rgb).rgb;\n";
 
                     if (specularEnabled || metalnessEnabled) {
                         if (m_lightsAsSeparateUniforms)
                             fragmentShader.addUniform(m_lightSpecularColor, "vec4");
                         outputSpecularEquation(material()->specularModel, fragmentShader, m_normalizedDirection, m_lightSpecularColor);
                     }
+
+                    if (isSpot)
+                        fragmentShader << "    }\n";
                 }
             }
 
@@ -1219,7 +1301,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
 
                 fragmentShader << "    texture_color" << texSwizzle << " = texture2D(" << m_imageSampler << ", " << m_imageFragCoords << ")" << lookupSwizzle << ";\n";
 
-                if (image->m_image.m_textureData.m_textureFlags.isPreMultiplied() == true)
+                if (image->m_image.m_textureData.m_textureFlags.isPreMultiplied())
                     fragmentShader << "    texture_color.rgb = texture_color.a > 0.0 ? texture_color.rgb / texture_color.a : vec3(0.0);\n";
 
                 // These mapping types honestly don't make a whole ton of sense to me.
@@ -1267,8 +1349,11 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                     fragmentShader.append("    global_diffuse_light.a *= texture_color.a;");
                     break;
                 case QSSGImageMapTypes::Opacity:
-                    fragmentShader.append("    global_diffuse_light.a *= texture_color.a;");
+                {
+                    const auto &channelProps = keyProps.m_textureChannels[QSSGShaderDefaultMaterialKeyProperties::OpacityChannel];
+                    fragmentShader << "    global_diffuse_light.a *= texture_color" << channelStr(channelProps, inKey) << ";\n";
                     break;
+                }
                 case QSSGImageMapTypes::Emissive:
                     fragmentShader.append("    global_emission *= texture_color.rgb * texture_color.a;");
                     break;
@@ -1281,11 +1366,13 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
         // Occlusion Map
         if (occlusionImage) {
             fragmentShader.addUniform("occlusionAmount", "float");
+            const auto &channelProps = keyProps.m_textureChannels[QSSGShaderDefaultMaterialKeyProperties::OcclusionChannel];
             if (identityImages.contains(occlusionImage))
                 generateImageUVSampler(occlusionImageIdx);
             else
                 generateImageUVCoordinates(occlusionImageIdx, *occlusionImage);
-            fragmentShader << "    float ao = texture2D(" << m_imageSampler << ", " << m_imageFragCoords << ").r;\n";
+            fragmentShader << "    float ao = texture2D(" << m_imageSampler << ", "
+                           << m_imageFragCoords << ")" << channelStr(channelProps, inKey) << ";\n";
             fragmentShader << "    global_diffuse_light.rgb = mix(global_diffuse_light.rgb, global_diffuse_light.rgb * ao, occlusionAmount);\n";
         }
 
@@ -1450,11 +1537,22 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                 }
             }
 
-            if (theLight->m_lightType == QSSGRenderLight::Type::Point) {
+            if (theLight->m_lightType == QSSGRenderLight::Type::Point
+                    || theLight->m_lightType == QSSGRenderLight::Type::Spot) {
                 theLightProperties.lightData.position = QVector4D(theLight->getGlobalPos(), 1.0);
                 theLightProperties.lightData.constantAttenuation = aux::translateConstantAttenuation(theLight->m_constantFade);
                 theLightProperties.lightData.linearAttenuation = aux::translateLinearAttenuation(theLight->m_linearFade);
                 theLightProperties.lightData.quadraticAttenuation = aux::translateQuadraticAttenuation(theLight->m_quadraticFade);
+                theLightProperties.lightData.coneAngle = 180.0f;
+                if (theLight->m_lightType == QSSGRenderLight::Type::Spot) {
+                    theLightProperties.lightData.coneAngle
+                            = qCos(qDegreesToRadians(theLight->m_coneAngle));
+                    float innerConeAngle = theLight->m_innerConeAngle;
+                    if (theLight->m_innerConeAngle > theLight->m_coneAngle)
+                        innerConeAngle = theLight->m_coneAngle;
+                    theLightProperties.lightData.innerConeAngle
+                            = qCos(qDegreesToRadians(innerConeAngle));
+                }
             } else if (theLight->m_lightType == QSSGRenderLight::Type::Area) {
                 theLightProperties.lightData.position = QVector4D(theLight->getGlobalPos(), 1.0);
 
@@ -1553,7 +1651,7 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
                     shader->m_lightProbe2Props.set(QVector4D(0.0f, 0.0f, 0.0f, 0.0f));
                     shader->m_lightProbeProps.set(QVector4D(0.0f, 0.0f, inProbeHorizon, inProbeBright * 0.01f));
                 }
-                QSSGRef<QSSGRenderTexture2D> textureImage = theLightProbe->m_textureData.m_texture;
+                const QSSGRef<QSSGRenderTexture2D> &textureImage = theLightProbe->m_textureData.m_texture;
                 shader->m_lightProbe.set(textureImage.data());
                 shader->m_lightProbeSize.set(
                         QVector2D(textureImage->textureDetails().width, textureImage->textureDetails().height));
@@ -1646,10 +1744,10 @@ struct QSSGShaderGenerator : public QSSGDefaultMaterialShaderGeneratorInterface
         // All of our shaders produce non-premultiplied values.
         switch (inMaterial.blendMode) {
         case QSSGRenderDefaultMaterial::MaterialBlendMode::Screen:
-            blendFunc = QSSGRenderBlendFunctionArgument(QSSGRenderSrcBlendFunc::SrcAlpha,
-                                                          QSSGRenderDstBlendFunc::One,
+            blendFunc = QSSGRenderBlendFunctionArgument(QSSGRenderSrcBlendFunc::One,
+                                                          QSSGRenderDstBlendFunc::OneMinusSrcColor,
                                                           QSSGRenderSrcBlendFunc::One,
-                                                          QSSGRenderDstBlendFunc::One);
+                                                          QSSGRenderDstBlendFunc::OneMinusSrcColor);
             break;
         case QSSGRenderDefaultMaterial::MaterialBlendMode::Multiply:
             blendFunc = QSSGRenderBlendFunctionArgument(QSSGRenderSrcBlendFunc::DstColor,

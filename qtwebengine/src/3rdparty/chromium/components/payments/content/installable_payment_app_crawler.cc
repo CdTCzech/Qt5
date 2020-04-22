@@ -68,7 +68,7 @@ void InstallablePaymentAppCrawler::Start(
 
   if (manifests_to_download.empty()) {
     // Post the result back asynchronously.
-    base::PostTaskWithTraits(
+    base::PostTask(
         FROM_HERE, {content::BrowserThread::UI},
         base::BindOnce(
             &InstallablePaymentAppCrawler::FinishCrawlingPaymentAppsIfReady,
@@ -400,7 +400,7 @@ void InstallablePaymentAppCrawler::DownloadAndDecodeWebAppIcon(
 
   number_of_web_app_icons_to_download_and_decode_++;
   bool can_download_icon = content::ManifestIconDownloader::Download(
-      web_contents(), best_icon_url,
+      web_contents(), downloader_->FindTestServerURL(best_icon_url),
       IconSizeCalculator::IdealIconHeight(native_view),
       IconSizeCalculator::MinimumIconHeight(),
       base::BindOnce(

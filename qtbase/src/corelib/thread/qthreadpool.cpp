@@ -136,7 +136,7 @@ void QThreadPoolThread::run()
             manager->waitingThreads.enqueue(this);
             registerThreadInactive();
             // wait for work, exiting after the expiry timeout is reached
-            runnableReady.wait(locker.mutex(), manager->expiryTimeout);
+            runnableReady.wait(locker.mutex(), QDeadlineTimer(manager->expiryTimeout));
             ++manager->activeThreads;
             if (manager->waitingThreads.removeOne(this))
                 expired = true;
@@ -512,13 +512,29 @@ void QThreadPool::start(QRunnable *runnable, int priority)
 }
 
 /*!
+    \overload
+    \since 5.15
+
+    Reserves a thread and uses it to run \a functionToRun, unless this thread will
+    make the current thread count exceed maxThreadCount().  In that case,
+    \a functionToRun is added to a run queue instead. The \a priority argument can
+    be used to control the run queue's order of execution.
+*/
+void QThreadPool::start(std::function<void()> functionToRun, int priority)
+{
+    if (!functionToRun)
+        return;
+    start(QRunnable::create(std::move(functionToRun)), priority);
+}
+
+/*!
     Attempts to reserve a thread to run \a runnable.
 
     If no threads are available at the time of calling, then this function
     does nothing and returns \c false.  Otherwise, \a runnable is run immediately
     using one available thread and this function returns \c true.
 
-    Note that the thread pool takes ownership of the \a runnable if
+    Note that on success the thread pool takes ownership of the \a runnable if
     \l{QRunnable::autoDelete()}{runnable->autoDelete()} returns \c true,
     and the \a runnable will be deleted automatically by the thread
     pool after the \l{QRunnable::run()}{runnable->run()} returns. If
@@ -533,13 +549,34 @@ bool QThreadPool::tryStart(QRunnable *runnable)
         return false;
 
     Q_D(QThreadPool);
-
     QMutexLocker locker(&d->mutex);
+    return d->tryStart(runnable);
+}
 
-    if (d->allThreads.isEmpty() == false && d->activeThreadCount() >= d->maxThreadCount)
+/*!
+    \overload
+    \since 5.15
+    Attempts to reserve a thread to run \a functionToRun.
+
+    If no threads are available at the time of calling, then this function
+    does nothing and returns \c false.  Otherwise, \a functionToRun is run immediately
+    using one available thread and this function returns \c true.
+*/
+bool QThreadPool::tryStart(std::function<void()> functionToRun)
+{
+    if (!functionToRun)
         return false;
 
-    return d->tryStart(runnable);
+    Q_D(QThreadPool);
+    QMutexLocker locker(&d->mutex);
+    if (!d->allThreads.isEmpty() && d->activeThreadCount() >= d->maxThreadCount)
+        return false;
+
+    QRunnable *runnable = QRunnable::create(std::move(functionToRun));
+    if (d->tryStart(runnable))
+        return true;
+    delete runnable;
+    return false;
 }
 
 /*! \property QThreadPool::expiryTimeout

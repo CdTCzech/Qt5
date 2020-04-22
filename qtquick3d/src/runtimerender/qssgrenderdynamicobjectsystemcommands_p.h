@@ -68,6 +68,7 @@ enum class CommandType
     ApplyImageValue,
     AllocateDataBuffer,
     ApplyDataBufferValue,
+    ApplyCullMode,
 };
 
 // All commands need at least two constructors.  One for when they are created that should
@@ -280,19 +281,17 @@ struct QSSGApplyInstanceValue : public QSSGCommand
 struct QSSGApplyValue : public QSSGCommand
 {
     QByteArray m_propertyName;
-    QSSGRenderShaderDataType m_valueType;
-    QSSGByteRef m_value;
-    QSSGApplyValue(const QByteArray &inName, QSSGRenderShaderDataType inValueType)
-        : QSSGCommand(CommandType::ApplyValue), m_propertyName(inName), m_valueType(inValueType)
+    QVariant m_value;
+    explicit QSSGApplyValue(const QByteArray &inName)
+        : QSSGCommand(CommandType::ApplyValue), m_propertyName(inName)
     {
     }
     // Default will attempt to apply all effect values to the currently bound shader
-    QSSGApplyValue() : QSSGCommand(CommandType::ApplyValue), m_valueType(QSSGRenderShaderDataType::Unknown) {}
+    QSSGApplyValue() : QSSGCommand(CommandType::ApplyValue) {}
 
     QSSGApplyValue(const QSSGApplyValue &inOther)
         : QSSGCommand(CommandType::ApplyValue)
         , m_propertyName(inOther.m_propertyName)
-        , m_valueType(inOther.m_valueType)
         , m_value(inOther.m_value)
     {
     }
@@ -410,6 +409,21 @@ struct QSSGApplyRenderState : public QSSGCommand
 
     QSSGApplyRenderState(const QSSGApplyRenderState &inOther)
         : QSSGCommand(CommandType::ApplyRenderState), m_renderState(inOther.m_renderState), m_enabled(inOther.m_enabled)
+    {
+    }
+};
+
+struct QSSGApplyCullMode : public QSSGCommand
+{
+    QSSGCullFaceMode m_cullMode;
+
+    QSSGApplyCullMode(QSSGCullFaceMode cullMode)
+        : QSSGCommand(CommandType::ApplyCullMode), m_cullMode(cullMode)
+    {
+    }
+
+    QSSGApplyCullMode(const QSSGApplyCullMode &inOther)
+        : QSSGCommand(CommandType::ApplyCullMode), m_cullMode(inOther.m_cullMode)
     {
     }
 };

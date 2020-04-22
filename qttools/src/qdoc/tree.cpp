@@ -63,9 +63,8 @@ QT_BEGIN_NAMESPACE
   qdoc database that is constructing the tree. This might not
   be necessary, and it might be removed later.
 
-  \a camelCaseModuleName is the project name for this tree,
-  which was obtained from the qdocconf file via the Config
-  singleton.
+  \a camelCaseModuleName is the project name for this tree
+  as it appears in the qdocconf file.
  */
 Tree::Tree(const QString &camelCaseModuleName, QDocDatabase *qdb)
     : treeHasBeenAnalyzed_(false),
@@ -79,9 +78,9 @@ Tree::Tree(const QString &camelCaseModuleName, QDocDatabase *qdb)
 {
     root_.setPhysicalModuleName(physicalModuleName_);
     root_.setTree(this);
-    if (Generator::writeQaPages()) {
+    const auto &config = Config::instance();
+    if (config.getBool(CONFIG_WRITEQAPAGES))
         targetListMap_ = new TargetListMap;
-    }
 }
 
 /*!
@@ -105,7 +104,8 @@ Tree::~Tree()
     }
     nodesByTargetRef_.clear();
     nodesByTargetTitle_.clear();
-    if (Generator::writeQaPages() && targetListMap_) {
+    const auto &config = Config::instance();
+    if (config.getBool(CONFIG_WRITEQAPAGES) && targetListMap_) {
         for (auto target = targetListMap_->begin(); target != targetListMap_->end(); ++target) {
             TargetList *tlist = target.value();
             if (tlist) {

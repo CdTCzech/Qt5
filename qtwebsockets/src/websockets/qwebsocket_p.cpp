@@ -69,7 +69,8 @@
 
 QT_BEGIN_NAMESPACE
 
-const quint64 FRAME_SIZE_IN_BYTES = 512 * 512 * 2;	//maximum size of a frame when sending a message
+const quint64 MAX_OUTGOING_FRAME_SIZE_IN_BYTES = std::numeric_limits<int>::max() - 1;
+const quint64 DEFAULT_OUTGOING_FRAME_SIZE_IN_BYTES = 512 * 512 * 2; //default size of a frame when sending a message
 
 QWebSocketConfiguration::QWebSocketConfiguration() :
 #ifndef QT_NO_SSL
@@ -111,7 +112,8 @@ QWebSocketPrivate::QWebSocketPrivate(const QString &origin, QWebSocketProtocol::
     m_configuration(),
     m_pMaskGenerator(&m_defaultMaskGenerator),
     m_defaultMaskGenerator(),
-    m_handshakeState(NothingDoneState)
+    m_handshakeState(NothingDoneState),
+    m_outgoingFrameSize(DEFAULT_OUTGOING_FRAME_SIZE_IN_BYTES)
 {
     m_pingTimer.start();
 }
@@ -143,7 +145,8 @@ QWebSocketPrivate::QWebSocketPrivate(QTcpSocket *pTcpSocket, QWebSocketProtocol:
     m_configuration(),
     m_pMaskGenerator(&m_defaultMaskGenerator),
     m_defaultMaskGenerator(),
-    m_handshakeState(NothingDoneState)
+    m_handshakeState(NothingDoneState),
+    m_outgoingFrameSize(DEFAULT_OUTGOING_FRAME_SIZE_IN_BYTES)
 {
     m_pingTimer.start();
 }
@@ -569,15 +572,14 @@ void QWebSocketPrivate::enableMasking(bool enable)
 /*!
  * \internal
  */
-void QWebSocketPrivate::makeConnections(const QTcpSocket *pTcpSocket)
+void QWebSocketPrivate::makeConnections(QTcpSocket *pTcpSocket)
 {
     Q_ASSERT(pTcpSocket);
     Q_Q(QWebSocket);
 
     if (Q_LIKELY(pTcpSocket)) {
         //pass through signals
-        QObject::connect(pTcpSocket,
-                         QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
+        QObject::connect(pTcpSocket, &QAbstractSocket::errorOccurred,
                          q, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error));
 #ifndef QT_NO_NETWORKPROXY
         QObject::connect(pTcpSocket, &QAbstractSocket::proxyAuthenticationRequired, q,
@@ -636,6 +638,10 @@ void QWebSocketPrivate::makeConnections(const QTcpSocket *pTcpSocket)
                             &QWebSocketPrivate::processPong);
     QObjectPrivate::connect(&m_dataProcessor, &QWebSocketDataProcessor::closeReceived, this,
                             &QWebSocketPrivate::processClose);
+
+    //fire readyread, in case we already have data inside the tcpSocket
+    if (pTcpSocket->bytesAvailable())
+        Q_EMIT pTcpSocket->readyRead();
 }
 
 /*!
@@ -772,11 +778,11 @@ qint64 QWebSocketPrivate::doWriteFrames(const QByteArray &data, bool isBinary)
     const QWebSocketProtocol::OpCode firstOpCode = isBinary ?
                 QWebSocketProtocol::OpCodeBinary : QWebSocketProtocol::OpCodeText;
 
-    int numFrames = data.size() / int(FRAME_SIZE_IN_BYTES);
+    int numFrames = data.size() / int(outgoingFrameSize());
     QByteArray tmpData(data);
     tmpData.detach();
     char *payload = tmpData.data();
-    quint64 sizeLeft = quint64(data.size()) % FRAME_SIZE_IN_BYTES;
+    quint64 sizeLeft = quint64(data.size()) % outgoingFrameSize();
     if (Q_LIKELY(sizeLeft))
         ++numFrames;
 
@@ -795,7 +801,7 @@ qint64 QWebSocketPrivate::doWriteFrames(const QByteArray &data, bool isBinary)
         const bool isLastFrame = (i == (numFrames - 1));
         const bool isFirstFrame = (i == 0);
 
-        const quint64 size = qMin(bytesLeft, FRAME_SIZE_IN_BYTES);
+        const quint64 size = qMin(bytesLeft, outgoingFrameSize());
         const QWebSocketProtocol::OpCode opcode = isFirstFrame ? firstOpCode
                                                                : QWebSocketProtocol::OpCodeContinue;
 
@@ -1000,8 +1006,8 @@ void QWebSocketPrivate::processHandshake(QTcpSocket *pSocket)
                     errorDescription = QWebSocket::tr("Malformed header in response: %1.").arg(headerLine);
                     break;
                 }
-                lastHeader = m_headers.insertMulti(headerLine.left(colonPos).trimmed().toLower(),
-                                                   headerLine.mid(colonPos + 1).trimmed());
+                lastHeader = m_headers.insert(headerLine.left(colonPos).trimmed().toLower(),
+                                              headerLine.mid(colonPos + 1).trimmed());
             }
         }
 
@@ -1048,8 +1054,7 @@ void QWebSocketPrivate::processHandshake(QTcpSocket *pSocket)
         } else if (m_httpStatusCode == 400) {
             //HTTP/1.1 400 Bad Request
             if (!version.isEmpty()) {
-                const QStringList versions = version.split(QStringLiteral(", "),
-                                                           QString::SkipEmptyParts);
+                const QStringList versions = version.split(QStringLiteral(", "), Qt::SkipEmptyParts);
                 if (!versions.contains(QString::number(QWebSocketProtocol::currentVersion()))) {
                     //if needed to switch protocol version, then we are finished here
                     //because we cannot handle other protocols than the RFC one (v13)
@@ -1300,6 +1305,80 @@ void QWebSocketPrivate::setSocketState(QAbstractSocket::SocketState state)
         Q_EMIT q->stateChanged(m_socketState);
     }
 }
+
+/*!
+    \internal
+ */
+void QWebSocketPrivate::setMaxAllowedIncomingFrameSize(quint64 maxAllowedIncomingFrameSize)
+{
+    m_dataProcessor.setMaxAllowedFrameSize(maxAllowedIncomingFrameSize);
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::maxAllowedIncomingFrameSize() const
+{
+    return m_dataProcessor.maxAllowedFrameSize();
+}
+
+/*!
+    \internal
+ */
+void QWebSocketPrivate::setMaxAllowedIncomingMessageSize(quint64 maxAllowedIncomingMessageSize)
+{
+    m_dataProcessor.setMaxAllowedMessageSize(maxAllowedIncomingMessageSize);
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::maxAllowedIncomingMessageSize() const
+{
+    return m_dataProcessor.maxAllowedMessageSize();
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::maxIncomingMessageSize()
+{
+    return QWebSocketDataProcessor::maxMessageSize();
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::maxIncomingFrameSize()
+{
+    return QWebSocketDataProcessor::maxFrameSize();
+}
+
+/*!
+    \internal
+ */
+void QWebSocketPrivate::setOutgoingFrameSize(quint64 outgoingFrameSize)
+{
+    if (outgoingFrameSize <= maxOutgoingFrameSize())
+        m_outgoingFrameSize = outgoingFrameSize;
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::outgoingFrameSize() const
+{
+    return m_outgoingFrameSize;
+}
+
+/*!
+    \internal
+ */
+quint64 QWebSocketPrivate::maxOutgoingFrameSize()
+{
+    return MAX_OUTGOING_FRAME_SIZE_IN_BYTES;
+}
+
 
 /*!
     \internal

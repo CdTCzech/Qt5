@@ -39,6 +39,7 @@ greaterThan(QT_CLANG_MAJOR_VERSION, 3)|greaterThan(QT_CLANG_MINOR_VERSION, 3)| \
     WERROR += -Wno-error=unused-const-variable
 
 HEADERS += qtqmlglobal.h \
+           inlinecomponentutils_p.h \
            qtqmlglobal_p.h \
            qtqmlcompilerglobal.h \
            qtqmlcompilerglobal_p.h
@@ -66,4 +67,11 @@ include(../3rdparty/masm/masm.pri)
 
 MODULE_PLUGIN_TYPES = \
     qmltooling
+
+QMLTYPES_FILENAME = plugins.qmltypes
+QMLTYPES_INSTALL_DIR = $$[QT_INSTALL_QML]/QtQml
+QML_IMPORT_NAME = QtQml
+IMPORT_VERSION = 2.$$QT_MINOR_VERSION
+CONFIG += qmltypes install_qmltypes install_metatypes
+
 load(qt_module)

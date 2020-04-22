@@ -163,6 +163,7 @@ Scene3DItem::Scene3DItem(QQuickItem *parent)
 {
     setFlag(QQuickItem::ItemHasContents, true);
     setAcceptedMouseButtons(Qt::MouseButtonMask);
+    setAcceptHoverEvents(true);
     // TO DO: register the event source in the main thread
 
     // Use manual drive mode when using Scene3D
@@ -292,19 +293,17 @@ void Scene3DItem::setHoverEnabled(bool enabled)
     \value Underlay
            Suitable for full screen 3D scenes where using an FBO might be too
            resource intensive. Scene3D behaves as a QtQuick underlay.
-
            Please note that when using this mode, the size of the Scene3D and
            its transformations are ignored and the rendering will occupy the
            whole screen. The position of the Scene3D in the QML file won't have
            any effect either. The Qt 3D content will be drawn prior to any Qt
            Quick content. Care has to be taken not to overdraw and hide the Qt
            3D content by overlapping Qt Quick content.
-
            Additionally when using this mode, the window clearBeforeRendering
            will be set to false automatically.
 
+    The default value is \c FBO.
     \since 5.14
-    \default FBO
  */
 void Scene3DItem::setCompositingMode(Scene3DItem::CompositingMode mode)
 {

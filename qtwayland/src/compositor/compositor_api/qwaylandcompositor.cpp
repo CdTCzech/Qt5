@@ -114,6 +114,15 @@ public:
 
         QWaylandKeyboardPrivate *keyb = QWaylandKeyboardPrivate::get(seat->keyboard());
 
+#if defined(Q_OS_QNX)
+        // The QNX platform plugin delivers scan codes that haven't been adjusted to be
+        // xkbcommon compatible. xkbcommon requires that the scan codes be bumped up by
+        // 8 because that's how evdev/XKB deliver scan codes. You might think that it
+        // would've been better to remove this (odd) requirement from xkbcommon on QNX
+        // but it turns out that conforming to it has much less impact.
+        static int offset = QGuiApplication::platformName() == QStringLiteral("qnx") ? 8 : 0;
+        ke->nativeScanCode += offset;
+#endif
         uint32_t code = ke->nativeScanCode;
         bool isDown = ke->keyType == QEvent::KeyPress;
 
@@ -196,11 +205,11 @@ void QWaylandCompositorPrivate::init()
 
     if (!socket_name.isEmpty()) {
         if (wl_display_add_socket(display, socket_name.constData()))
-            qFatal("Fatal: Failed to open server socket\n");
+            qFatal("Fatal: Failed to open server socket: \"%s\". XDG_RUNTIME_DIR is: \"%s\"\n", socket_name.constData(), getenv("XDG_RUNTIME_DIR"));
     } else {
         const char *autoSocketName = wl_display_add_socket_auto(display);
         if (!autoSocketName)
-            qFatal("Fatal: Failed to open server socket\n");
+            qFatal("Fatal: Failed to open default server socket. XDG_RUNTIME_DIR is: \"%s\"\n", getenv("XDG_RUNTIME_DIR"));
         socket_name = autoSocketName;
         emit q->socketNameChanged(socket_name);
     }
@@ -368,9 +377,6 @@ void QWaylandCompositorPrivate::initializeHardwareIntegration()
 
     loadClientBufferIntegration();
     loadServerBufferIntegration();
-
-    if (client_buffer_integration)
-        client_buffer_integration->initializeHardware(display);
 #endif
 }
 
@@ -400,12 +406,32 @@ void QWaylandCompositorPrivate::loadClientBufferIntegration()
     if (!targetKey.isEmpty()) {
         client_buffer_integration.reset(QtWayland::ClientBufferIntegrationFactory::create(targetKey, QStringList()));
         if (client_buffer_integration) {
+            qCDebug(qLcWaylandCompositorHardwareIntegration) << "Loaded client buffer integration:" << targetKey;
             client_buffer_integration->setCompositor(q);
-            if (hw_integration)
-                hw_integration->setClientBufferIntegration(targetKey);
+            if (!client_buffer_integration->initializeHardware(display)) {
+                qCWarning(qLcWaylandCompositorHardwareIntegration)
+                        << "Failed to initialize hardware for client buffer integration:" << targetKey;
+                client_buffer_integration.reset();
+            }
+        } else {
+            qCWarning(qLcWaylandCompositorHardwareIntegration)
+                    << "Failed to load client buffer integration:" << targetKey;
         }
     }
-    //BUG: if there is no client buffer integration, bad things will happen when opengl is used
+
+    if (!client_buffer_integration) {
+        qCWarning(qLcWaylandCompositorHardwareIntegration)
+                << "No client buffer integration was loaded, this means that clients will fall back"
+                << "to use CPU buffers (wl_shm) for transmitting buffers instead of using zero-copy"
+                << "GPU buffer handles. Expect serious performance impact with OpenGL clients due"
+                << "to potentially multiple copies between CPU and GPU memory per buffer.\n"
+                << "See the QtWayland readme for more info about how to build and configure Qt for"
+                << "your device.";
+        return;
+    }
+
+    if (client_buffer_integration && hw_integration)
+        hw_integration->setClientBufferIntegration(targetKey);
 #endif
 }
 

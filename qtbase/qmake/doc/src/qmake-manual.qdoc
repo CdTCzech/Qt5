@@ -84,7 +84,6 @@
 /*!
     \page qmake-overview.html
     \title Overview
-    \contentspage {qmake Manual}{Contents}
     \previouspage qmake Manual
     \nextpage Getting Started
 
@@ -158,7 +157,6 @@
 /*!
     \page qmake-project-files.html
     \title Creating Project Files
-    \contentspage {qmake Manual}{Contents}
     \previouspage Getting Started
     \nextpage Building Common Project Types
 
@@ -477,7 +475,6 @@
 /*!
     \page qmake-running.html
     \title Running qmake
-    \contentspage {qmake Manual}{Contents}
     \previouspage Building Common Project Types
     \nextpage Platform Notes
 
@@ -647,7 +644,6 @@
 /*!
     \page qmake-platform-notes.html
     \title Platform Notes
-    \contentspage {qmake Manual}{Contents}
     \previouspage Running qmake
     \nextpage qmake Language
 
@@ -863,7 +859,6 @@
 /*!
     \page qmake-reference.html
     \title Reference
-    \contentspage {qmake Manual}{Contents}
     \previouspage Configuring qmake
     \nextpage Variables
 
@@ -894,7 +889,6 @@
 /*!
     \page qmake-variable-reference.html
     \title Variables
-    \contentspage {qmake Manual}{Contents}
     \previouspage Reference
     \nextpage Replace Functions
     \keyword qmake Variable Reference
@@ -1111,6 +1105,15 @@
     \row \li designer \li The target is a plugin for \QD.
     \row \li no_lflags_merge \li Ensures that the list of libraries stored in the
          \c LIBS variable is not reduced to a list of unique values before it is used.
+    \row \li metatypes \li Create a \c {<name>_metatypes.json} file for the
+         current project. \c {<name>} is the all lowercase base name of
+         \l TARGET.
+    \row \li qmltypes \li Automatically register QML types defined in C++.
+         For more information, see \l {Defining QML Types from C++}.
+         Also, create a \c {<template>.qmltypes} file for the current
+         project. \c <template> will be \c plugins (plural, for historical
+         reasons) if \c plugin is set, or the value of \l TEMPLATE otherwise.
+         \c qmltypes implies \c metatypes.
     \endtable
 
     These options define specific features on Windows only:
@@ -2579,6 +2582,40 @@
 
     For more information, see \l {Expressing Supported iOS Versions}.
 
+    \section1 QML_IMPORT_MAJOR_VERSION
+
+    Specifies the major version to be used for automatically generated QML type
+    registrations. For more information, see \l {Defining QML Types from C++}.
+
+    \section1 QML_IMPORT_MINOR_VERSION
+
+    When automatically registering QML types defined in C++, register an
+    additional version of the module using this minor version. Generally,
+    minor versions to be registered are inferred from the meta objects.
+
+    You can use this variable if the meta objects have not changed and you
+    still want to import a QML module with a newer minor version number. For
+    example, \c MyModule metaobjects are at \c 1.1 level, but you want to import
+    the module as \c 1.3.
+
+    \section1 QML_IMPORT_VERSION
+
+    Specifies \l QML_IMPORT_MAJOR_VERSION and \l QML_IMPORT_MINOR_VERSION as a
+    \c {<major>.<minor>} version string.
+
+    \section1 QML_IMPORT_NAME
+
+    Specifies the module name to be used for automatically generated QML type
+    registrations. For more information, see \l {Defining QML Types from C++}.
+
+    \section1 QML_FOREIGN_METATYPES
+
+    Specifies further JSON files with metatypes to be considered when generating
+    qmltypes files. Use this when external libraries provide types that are
+    exposed to QML, either directly or as base types or properties of other
+    types. Qt types will automatically be considered and don't have to be added
+    here.
+
     \section1 QT
 
     Specifies the \l{All Modules}{Qt modules} that are used by your project. For
@@ -3154,7 +3191,6 @@
 /*!
     \page qmake-function-reference.html
     \title Replace Functions
-    \contentspage {qmake Manual}{Contents}
     \previouspage Variables
     \nextpage Test Functions
     \keyword qmake Function Reference - Replace Functions
@@ -3688,7 +3724,6 @@
 /*!
     \page qmake-test-function-reference.html
     \title Test Functions
-    \contentspage {qmake Manual}{Contents}
     \previouspage Replace Functions
     \keyword qmake Function Reference - Test Functions
 
@@ -4110,7 +4145,6 @@
 
 /*!
     \page qmake-environment-reference.html
-    \contentspage {qmake Manual}{Contents}
     \previouspage Using Precompiled Headers
     \nextpage Reference
 
@@ -4262,7 +4296,6 @@
 /*!
     \page qmake-language.html
     \title qmake Language
-    \contentspage {qmake Manual}{Contents}
     \previouspage Platform Notes
     \nextpage Advanced Usage
 
@@ -4589,7 +4622,6 @@
 /*!
     \page qmake-advanced-usage.html
     \title Advanced Usage
-    \contentspage {qmake Manual}{Contents}
     \previouspage qmake Language
     \nextpage Using Precompiled Headers
 
@@ -4938,7 +4970,6 @@
 /*!
     \page qmake-precompiledheaders.html
     \title Using Precompiled Headers
-    \contentspage {qmake Manual}{Contents}
     \previouspage Advanced Usage
     \nextpage Configuring qmake
 
@@ -5156,7 +5187,6 @@
     \keyword qmake-getting-started
     \page qmake-tutorial.html
     \title Getting Started
-    \contentspage {qmake Manual}{Contents}
     \previouspage Overview
     \nextpage Creating Project Files
 
@@ -5325,7 +5355,6 @@
 /*!
     \page qmake-common-projects.html
     \title Building Common Project Types
-    \contentspage {qmake Manual}{Contents}
     \previouspage Creating Project Files
     \nextpage Running qmake
 

@@ -2046,7 +2046,7 @@ Tokenizer::Token XQueryTokenizer::attributeAsRaw(const QChar sep,
     }
 }
 
-Tokenizer::Token XQueryTokenizer::nextToken(YYLTYPE *const sourceLocator)
+Tokenizer::Token XQueryTokenizer::nextToken(XPATHLTYPE *const sourceLocator)
 {
     switch (state()) {
 		/* We want to skip or do special whitespace handling for these

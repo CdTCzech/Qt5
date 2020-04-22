@@ -254,6 +254,23 @@ QSSGRenderVertFragCompilationResult QSSGRenderContext::compileBinary(const char 
 #endif
 }
 
+QSSGRenderVertFragCompilationResult QSSGRenderContext::compileBinary(const char *shaderName,
+                                                                     quint32 format,
+                                                                     const QByteArray &binary)
+{
+#ifndef _MACOSX
+    QSSGRenderVertFragCompilationResult result = QSSGRenderShaderProgram::create(this,
+                                                                                 shaderName,
+                                                                                 format,
+                                                                                 binary);
+
+    return result;
+#else
+    Q_ASSERT(false);
+    return QSSGRenderVertFragCompilationResult();
+#endif
+}
+
 QSSGRenderVertFragCompilationResult QSSGRenderContext::compileComputeSource(const QByteArray &shaderName,
                                                                                 QSSGByteView computeShaderSource)
 {
@@ -571,7 +588,7 @@ void QSSGRenderContext::popPropertySet(bool inForceSetProperties)
 
 void QSSGRenderContext::clear(QSSGRenderClearFlags flags)
 {
-    if ((flags & QSSGRenderClearValues::Depth) && m_hardwarePropertyContext.m_depthWriteEnabled == false) {
+    if (Q_UNLIKELY((flags & QSSGRenderClearValues::Depth) && !m_hardwarePropertyContext.m_depthWriteEnabled)) {
         Q_ASSERT(false);
         setDepthWriteEnabled(true);
     }
@@ -615,6 +632,13 @@ void QSSGRenderContext::copyFramebufferTexture(qint32 srcX0,
     m_backend->copyFramebufferTexture(srcX0, srcY0, width, height, dstX0, dstY0,
                                       buffer.texture2D()->handle(),
                                       QSSGRenderTextureTargetType::Texture2D);
+}
+
+void QSSGRenderContext::releaseResources()
+{
+    m_hardwarePropertyContext = QSSGGLHardPropertyContext();
+    m_constantToImpMap.clear();
+    m_storageToImpMap.clear();
 }
 
 bool QSSGRenderContext::bindShaderToInputAssembler(const QSSGRef<QSSGRenderInputAssembler> &inputAssembler,

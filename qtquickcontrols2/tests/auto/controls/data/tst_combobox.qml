@@ -1854,6 +1854,22 @@ TestCase {
         compare(closedSpy.count, 1)
     }
 
+    function test_comboBoxSelectTextByMouse() {
+        let control = createTemporaryObject(comboBox, testCase,
+            { editable: true, selectTextByMouse: true, model: [ "Some text" ], width: parent.width })
+        verify(control)
+        waitForRendering(control)
+        control.forceActiveFocus()
+
+        // Position the text cursor at the beginning of the text.
+        mouseClick(control, control.leftPadding, control.height / 2)
+        // Select all of the text.
+        mousePress(control, control.leftPadding, control.height / 2)
+        mouseMove(control, control.leftPadding + control.contentItem.width, control.height / 2)
+        mouseRelease(control, control.leftPadding + control.contentItem.width, control.height / 2)
+        compare(control.contentItem.selectedText, "Some text")
+    }
+
     // QTBUG-78885: When the edit text is changed on an editable ComboBox,
     // and then that ComboBox loses focus, its currentIndex should change
     // to the index of the edit text (assuming a match is found).

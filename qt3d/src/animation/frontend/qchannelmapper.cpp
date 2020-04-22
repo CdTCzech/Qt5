@@ -94,8 +94,7 @@ void QChannelMapper::removeMapping(QAbstractChannelMapping *mapping)
 {
     Q_ASSERT(mapping);
     Q_D(QChannelMapper);
-    if (!d->m_mappings.removeOne(mapping))
-        return;
+    d->m_mappings.removeOne(mapping);
     d->updateNode(mapping, "mappings", Qt3DCore::PropertyValueRemoved);
     // Remove bookkeeping connection
     d->unregisterDestructionHelper(mapping);

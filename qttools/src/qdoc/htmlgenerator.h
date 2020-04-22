@@ -34,7 +34,6 @@
 #define HTMLGENERATOR_H
 
 #include "codemarker.h"
-#include "config.h"
 #include "xmlgenerator.h"
 
 #include <QtCore/qhash.h>
@@ -43,6 +42,7 @@
 
 QT_BEGIN_NAMESPACE
 
+class Config;
 class HelpProjectWriter;
 
 class HtmlGenerator : public XmlGenerator
@@ -54,7 +54,7 @@ public:
     HtmlGenerator();
     ~HtmlGenerator() override;
 
-    void initializeGenerator(const Config &config) override;
+    void initializeGenerator() override;
     void terminateGenerator() override;
     QString format() override;
     void generateDocs() override;
@@ -79,9 +79,8 @@ protected:
     QString fileExtension() const override;
 
     void generateManifestFile(const QString &manifest, const QString &element);
-    void readManifestMetaContent(const Config &config);
+    void readManifestMetaContent();
     void generateKeywordAnchors(const Node *node);
-    void generateAssociatedPropertyNotes(FunctionNode *fn);
 
 private:
     enum SubTitleSize { SmallSubTitle, LargeSubTitle };
@@ -200,6 +199,8 @@ private:
     QString buildversion;
     QString qflagsHref_;
     int tocDepth;
+
+    Config *config;
 
 public:
     static bool debugging_on;

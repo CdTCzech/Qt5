@@ -116,7 +116,7 @@ public:
     static QAbstractEventDispatcher *qt_qpa_core_dispatcher()
     {
         if (QCoreApplication::instance())
-            return QCoreApplication::instance()->d_func()->threadData->eventDispatcher.loadRelaxed();
+            return QCoreApplication::instance()->d_func()->threadData.loadRelaxed()->eventDispatcher.loadRelaxed();
         else
             return nullptr;
     }
@@ -323,17 +323,22 @@ public:
 
     static void resetCachedDevicePixelRatio();
 
-    static bool setPalette(const QPalette &palette);
-
 protected:
     virtual void notifyThemeChanged();
-    virtual void sendApplicationPaletteChange(bool toAllWidgets = false, const char *className = nullptr);
+
+    static bool setPalette(const QPalette &palette);
+    virtual QPalette basePalette() const;
+    virtual void handlePaletteChanged(const char *className = nullptr);
+
     bool tryCloseRemainingWindows(QWindowList processedWindows);
 #if QT_CONFIG(draganddrop)
     virtual void notifyDragStarted(const QDrag *);
 #endif // QT_CONFIG(draganddrop)
 
 private:
+    static void clearPalette();
+    static void updatePalette();
+
     friend class QDragManager;
 
     static QGuiApplicationPrivate *self;

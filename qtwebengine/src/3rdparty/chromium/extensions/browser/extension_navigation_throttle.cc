@@ -101,9 +101,8 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
     guest_view::GuestViewBase* guest =
         guest_view::GuestViewBase::FromWebContents(web_contents);
     if (url_has_extension_scheme && guest) {
-      // This variant of this logic applies to PlzNavigate top-level
-      // navigations. It is performed for subresources, and for non-PlzNavigate
-      // top navigations, in url_request_util::AllowCrossRendererResourceLoad.
+      // This only handles top-level navigations. For subresources, is is done
+      // in url_request_util::AllowCrossRendererResourceLoad.
       const std::string& owner_extension_id = guest->owner_host();
       const Extension* owner_extension =
           registry->enabled_extensions().GetByID(owner_extension_id);
@@ -136,12 +135,10 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
   const url::Origin& initiator_origin =
       navigation_handle()->GetInitiatorOrigin().value();
 
-  // TODO(lukasza): https://crbug.com/1003957: Get rid of duplication with
-  // ChromeContentBrowserClientExtensionsPart::ShouldAllowOpenURL.
-
   // Navigations from chrome://, devtools:// or chrome-search:// pages need to
-  // be allowed, even if the target |url| is not web-accessible.  See
-  // https://crbug.com/662602.
+  // be allowed, even if the target |url| is not web-accessible.  See also:
+  // - https://crbug.com/662602
+  // - similar checks in extensions::ResourceRequestPolicy::CanRequestResource
   if (initiator_origin.scheme() == content::kChromeUIScheme ||
       initiator_origin.scheme() == content::kChromeDevToolsScheme ||
       ExtensionsBrowserClient::Get()->ShouldSchemeBypassNavigationChecks(
@@ -163,6 +160,7 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
                                                            url.path())) {
     return content::NavigationThrottle::BLOCK_REQUEST;
   }
+
   // A platform app may not be loaded in an <iframe> by another origin.
   //
   // In fact, platform apps may not have any cross-origin iframes at all;
@@ -179,7 +177,6 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
           initiator_origin.GetURL());
   if (initiator_extension && initiator_extension->is_platform_app())
     return content::NavigationThrottle::BLOCK_REQUEST;
-
 
   return content::NavigationThrottle::PROCEED;
 }

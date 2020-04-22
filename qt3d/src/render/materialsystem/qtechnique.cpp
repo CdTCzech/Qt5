@@ -269,9 +269,8 @@ void QTechnique::removeFilterKey(QFilterKey *filterKey)
 {
     Q_ASSERT(filterKey);
     Q_D(QTechnique);
-    if (!d->m_filterKeys.removeOne(filterKey))
-        return;
     d->updateNode(filterKey, "filterKeys", Qt3DCore::PropertyValueRemoved);
+    d->m_filterKeys.removeOne(filterKey);
     // Remove bookkeeping connection
     d->unregisterDestructionHelper(filterKey);
 }
@@ -317,9 +316,8 @@ void QTechnique::removeParameter(QParameter *parameter)
 {
     Q_ASSERT(parameter);
     Q_D(QTechnique);
-    if (!d->m_parameters.removeOne(parameter))
-        return;
     d->updateNode(parameter, "parameter", Qt3DCore::PropertyValueRemoved);
+    d->m_parameters.removeOne(parameter);
     // Remove bookkeeping connection
     d->unregisterDestructionHelper(parameter);
 }
@@ -355,9 +353,8 @@ void QTechnique::removeRenderPass(QRenderPass *pass)
 {
     Q_ASSERT(pass);
     Q_D(QTechnique);
-    if (!d->m_renderPasses.removeOne(pass))
-        return;
     d->updateNode(pass, "pass", Qt3DCore::PropertyValueAdded);
+    d->m_renderPasses.removeOne(pass);
     // Remove bookkeeping connection
     d->unregisterDestructionHelper(pass);
 }
