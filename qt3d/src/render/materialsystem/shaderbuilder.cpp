@@ -234,6 +234,8 @@ void ShaderBuilder::generateCode(QShaderProgram::ShaderType type)
 
     auto format = QShaderFormat();
     format.setApi(m_graphicsApi.m_api == QGraphicsApiFilter::OpenGLES ? QShaderFormat::OpenGLES
+                : m_graphicsApi.m_api == QGraphicsApiFilter::Vulkan ? QShaderFormat::VulkanFlavoredGLSL
+                : m_graphicsApi.m_api == QGraphicsApiFilter::RHI ? QShaderFormat::RHI
                 : m_graphicsApi.m_profile == QGraphicsApiFilter::CoreProfile ? QShaderFormat::OpenGLCoreProfile
                 : m_graphicsApi.m_profile == QGraphicsApiFilter::CompatibilityProfile ? QShaderFormat::OpenGLCompatibilityProfile
                 : QShaderFormat::OpenGLNoProfile);
@@ -246,7 +248,8 @@ void ShaderBuilder::generateCode(QShaderProgram::ShaderType type)
     generator.graph = graph;
 
     const auto code = generator.createShaderCode(m_enabledLayers);
-    m_codes.insert(type, QShaderProgramPrivate::deincludify(code, graphPath + QStringLiteral(".glsl")));
+    const auto deincludified = QShaderProgramPrivate::deincludify(code, graphPath + QStringLiteral(".glsl"));
+    m_codes.insert(type, deincludified);
     m_dirtyTypes.remove(type);
 
     m_pendingUpdates.push_back({ peerId(),
@@ -278,7 +281,7 @@ void ShaderBuilder::syncFromFrontEnd(const QNode *frontEnd, bool firstTime)
         markDirty(AbstractRenderer::ShadersDirty);
     }
 
-    static const QVector<std::pair<QShaderProgram::ShaderType, QUrl (QShaderProgramBuilder::*)() const>> shaderTypesToGetters = {
+    static const QVarLengthArray<std::pair<QShaderProgram::ShaderType, QUrl (QShaderProgramBuilder::*)() const>, 6> shaderTypesToGetters {
         {QShaderProgram::Vertex, &QShaderProgramBuilder::vertexShaderGraph},
         {QShaderProgram::TessellationControl, &QShaderProgramBuilder::tessellationControlShaderGraph},
         {QShaderProgram::TessellationEvaluation, &QShaderProgramBuilder::tessellationEvaluationShaderGraph},

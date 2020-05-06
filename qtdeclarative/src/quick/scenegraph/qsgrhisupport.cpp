@@ -38,7 +38,10 @@
 ****************************************************************************/
 
 #include "qsgrhisupport_p.h"
-#include "qsgdefaultrendercontext_p.h"
+#include "qsgcontext_p.h"
+#if QT_CONFIG(opengl)
+#  include "qsgdefaultrendercontext_p.h"
+#endif
 #include <QtGui/qwindow.h>
 
 #if QT_CONFIG(vulkan)
@@ -383,8 +386,15 @@ static const void *qsgrhi_mtl_rifResource(QSGRendererInterface::Resource res, co
 }
 #endif
 
-const void *QSGRhiSupport::rifResource(QSGRendererInterface::Resource res, const QSGDefaultRenderContext *rc)
+const void *QSGRhiSupport::rifResource(QSGRendererInterface::Resource res,
+                                       const QSGDefaultRenderContext *rc)
 {
+// ### This condition is a temporary workaround to allow compilation
+// with -no-opengl, but Vulkan or Metal enabled, to succeed. Full
+// support for RHI-capable -no-opengl builds will be available in
+// Qt 6 once the direct OpenGL code path gets removed.
+#if QT_CONFIG(opengl)
+
     QRhi *rhi = rc->rhi();
     if (res == QSGRendererInterface::RhiResource || !rhi)
         return rhi;
@@ -422,6 +432,12 @@ const void *QSGRhiSupport::rifResource(QSGRendererInterface::Resource res, const
     default:
         return nullptr;
     }
+
+#else
+    Q_UNUSED(res);
+    Q_UNUSED(rc);
+    return nullptr;
+#endif
 }
 
 int QSGRhiSupport::chooseSampleCountForWindowWithRhi(QWindow *window, QRhi *rhi)

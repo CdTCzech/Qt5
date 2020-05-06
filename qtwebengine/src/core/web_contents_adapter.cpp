@@ -1014,6 +1014,16 @@ ProfileAdapter* WebContentsAdapter::profileAdapter()
                     static_cast<ProfileQt*>(m_webContents->GetBrowserContext())->profileAdapter() : nullptr;
 }
 
+void WebContentsAdapter::setRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor)
+{
+    m_requestInterceptor = interceptor;
+}
+
+QWebEngineUrlRequestInterceptor* WebContentsAdapter::requestInterceptor() const
+{
+    return m_requestInterceptor;
+}
+
 #ifndef QT_NO_ACCESSIBILITY
 QAccessibleInterface *WebContentsAdapter::browserAccessible()
 {
@@ -1356,16 +1366,10 @@ void WebContentsAdapter::grantMediaAccessPermission(const QUrl &securityOrigin, 
     MediaCaptureDevicesDispatcher::GetInstance()->handleMediaAccessPermissionResponse(m_webContents.get(), securityOrigin, flags);
 }
 
-void WebContentsAdapter::runGeolocationRequestCallback(const QUrl &securityOrigin, bool allowed)
+void WebContentsAdapter::runFeatureRequestCallback(const QUrl &securityOrigin, ProfileAdapter::PermissionType feature, bool allowed)
 {
     CHECK_INITIALIZED();
-    m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::GeolocationPermission, allowed);
-}
-
-void WebContentsAdapter::runUserNotificationRequestCallback(const QUrl &securityOrigin, bool allowed)
-{
-    CHECK_INITIALIZED();
-    m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::NotificationPermission, allowed);
+    m_profileAdapter->permissionRequestReply(securityOrigin, feature, allowed);
 }
 
 void WebContentsAdapter::grantMouseLockPermission(bool granted)

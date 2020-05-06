@@ -53,7 +53,7 @@ class Generator
 
 public:
     enum ListType { Generic, Obsolete };
-    enum Addendum { Invokable, PrivateSignal, QmlSignalHandler, AssociatedProperties };
+    enum Addendum { Invokable, PrivateSignal, QmlSignalHandler, AssociatedProperties, TypeAlias };
 
     Generator();
     virtual ~Generator();
@@ -141,7 +141,8 @@ protected:
     static QString formatSince(const Node *node);
     void generateSince(const Node *node, CodeMarker *marker);
     void generateStatus(const Node *node, CodeMarker *marker);
-    virtual void generateAddendum(const Node *node, Addendum type, CodeMarker *marker);
+    virtual void generateAddendum(const Node *node, Addendum type, CodeMarker *marker,
+                                  bool generateNote = true);
     void generateThreadSafeness(const Node *node, CodeMarker *marker);
     QString getMetadataElement(const Aggregate *inner, const QString &t);
     QStringList getMetadataElements(const Aggregate *inner, const QString &t);
@@ -159,8 +160,6 @@ protected:
     static bool hasExceptions(const Node *node, NodeList &reentrant, NodeList &threadsafe,
                               NodeList &nonreentrant);
 
-    QMap<QString, QStringList> editionGroupMap;
-    QMap<QString, QStringList> editionModuleMap;
     QString naturalLanguage;
 #ifndef QT_NO_TEXTCODEC
     QTextCodec *outputCodec;

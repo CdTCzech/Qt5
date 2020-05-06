@@ -163,7 +163,6 @@ QWebEnginePagePrivate::QWebEnginePagePrivate(QWebEngineProfile *_profile)
     , webChannelWorldId(QWebEngineScript::MainWorld)
     , defaultAudioMuted(false)
     , defaultZoomFactor(1.0)
-    , requestInterceptor(nullptr)
 #if QT_CONFIG(webengine_printing_and_pdf)
     , currentPrinter(nullptr)
 #endif
@@ -185,8 +184,6 @@ QWebEnginePagePrivate::QWebEnginePagePrivate(QWebEngineProfile *_profile)
 
 QWebEnginePagePrivate::~QWebEnginePagePrivate()
 {
-    if (requestInterceptor)
-        profile->d_ptr->profileAdapter()->removePageRequestInterceptor();
     delete history;
     delete settings;
     profile->d_ptr->removeWebContentsAdapterClient(this);
@@ -351,7 +348,10 @@ void QWebEnginePagePrivate::unhandledKeyEvent(QKeyEvent *event)
         QGuiApplication::sendEvent(view->parentWidget(), event);
 }
 
-void QWebEnginePagePrivate::adoptNewWindow(QSharedPointer<WebContentsAdapter> newWebContents, WindowOpenDisposition disposition, bool userGesture, const QRect &initialGeometry, const QUrl &targetUrl)
+QSharedPointer<WebContentsAdapter>
+QWebEnginePagePrivate::adoptNewWindow(QSharedPointer<WebContentsAdapter> newWebContents,
+                                      WindowOpenDisposition disposition, bool userGesture,
+                                      const QRect &initialGeometry, const QUrl &targetUrl)
 {
     Q_Q(QWebEnginePage);
     Q_UNUSED(userGesture);
@@ -359,27 +359,11 @@ void QWebEnginePagePrivate::adoptNewWindow(QSharedPointer<WebContentsAdapter> ne
 
     QWebEnginePage *newPage = q->createWindow(toWindowType(disposition));
     if (!newPage)
-        return;
+        return nullptr;
 
-    if (newPage->d_func() == this) {
-        // If createWindow returns /this/ we must delay the adoption.
-        Q_ASSERT(q == newPage);
-        // WebContents might be null if we just opened a new page for navigation, in that case
-        // avoid referencing newWebContents so that it is deleted and WebContentsDelegateQt::OpenURLFromTab
-        // will fall back to navigating current page.
-        if (newWebContents->webContents()) {
-            QTimer::singleShot(0, q, [this, newPage, newWebContents, initialGeometry] () {
-                adoptNewWindowImpl(newPage, newWebContents, initialGeometry);
-            });
-        }
-    } else {
-        adoptNewWindowImpl(newPage, newWebContents, initialGeometry);
-    }
-}
+    if (!newWebContents->webContents())
+        return newPage->d_func()->adapter; // Reuse existing adapter
 
-void QWebEnginePagePrivate::adoptNewWindowImpl(QWebEnginePage *newPage,
-        const QSharedPointer<WebContentsAdapter> &newWebContents, const QRect &initialGeometry)
-{
     // Mark the new page as being in the process of being adopted, so that a second mouse move event
     // sent by newWebContents->initialize() gets filtered in RenderWidgetHostViewQt::forwardEvent.
     // The first mouse move event is being sent by q->createWindow(). This is necessary because
@@ -397,6 +381,8 @@ void QWebEnginePagePrivate::adoptNewWindowImpl(QWebEnginePage *newPage,
 
     if (!initialGeometry.isEmpty())
         emit newPage->geometryChangeRequested(initialGeometry);
+
+    return newWebContents;
 }
 
 bool QWebEnginePagePrivate::isBeingAdopted()
@@ -537,10 +523,24 @@ void QWebEnginePagePrivate::runMediaAccessPermissionRequest(const QUrl &security
     Q_EMIT q->featurePermissionRequested(securityOrigin, feature);
 }
 
-void QWebEnginePagePrivate::runGeolocationPermissionRequest(const QUrl &securityOrigin)
+static QWebEnginePage::Feature toFeature(QtWebEngineCore::ProfileAdapter::PermissionType type)
+{
+    switch (type) {
+    case QtWebEngineCore::ProfileAdapter::NotificationPermission:
+        return QWebEnginePage::Notifications;
+    case QtWebEngineCore::ProfileAdapter::GeolocationPermission:
+        return QWebEnginePage::Geolocation;
+    default:
+        break;
+    }
+    Q_UNREACHABLE();
+    return QWebEnginePage::Feature(-1);
+}
+
+void QWebEnginePagePrivate::runFeaturePermissionRequest(QtWebEngineCore::ProfileAdapter::PermissionType permission, const QUrl &securityOrigin)
 {
     Q_Q(QWebEnginePage);
-    Q_EMIT q->featurePermissionRequested(securityOrigin, QWebEnginePage::Geolocation);
+    Q_EMIT q->featurePermissionRequested(securityOrigin, toFeature(permission));
 }
 
 void QWebEnginePagePrivate::runMouseLockPermissionRequest(const QUrl &securityOrigin)
@@ -559,12 +559,6 @@ void QWebEnginePagePrivate::runRegisterProtocolHandlerRequest(QWebEngineRegister
 {
     Q_Q(QWebEnginePage);
     Q_EMIT q->registerProtocolHandlerRequested(request);
-}
-
-void QWebEnginePagePrivate::runUserNotificationPermissionRequest(const QUrl &securityOrigin)
-{
-    Q_Q(QWebEnginePage);
-    Q_EMIT q->featurePermissionRequested(securityOrigin, QWebEnginePage::Notifications);
 }
 
 QObject *QWebEnginePagePrivate::accessibilityParentObject()
@@ -1908,20 +1902,7 @@ void QWebEnginePagePrivate::visibleChanged(bool visible)
 void QWebEnginePage::setUrlRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor)
 {
     Q_D(QWebEnginePage);
-    bool hadInterceptorChanged = bool(d->requestInterceptor) != bool(interceptor);
-    d->requestInterceptor = interceptor;
-    if (hadInterceptorChanged) {
-        if (interceptor)
-            d->profile->d_ptr->profileAdapter()->addPageRequestInterceptor();
-        else
-            d->profile->d_ptr->profileAdapter()->removePageRequestInterceptor();
-    }
-}
-
-void QWebEnginePagePrivate::interceptRequest(QWebEngineUrlRequestInfo &info)
-{
-    if (requestInterceptor)
-        requestInterceptor->interceptRequest(info);
+    d->adapter->setRequestInterceptor(interceptor);
 }
 
 #if QT_CONFIG(menu)
@@ -1976,13 +1957,13 @@ void QWebEnginePage::setFeaturePermission(const QUrl &securityOrigin, QWebEngine
             d->adapter->grantMediaAccessPermission(securityOrigin, WebContentsAdapterClient::MediaDesktopVideoCapture);
             break;
         case Geolocation:
-            d->adapter->runGeolocationRequestCallback(securityOrigin, true);
+            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::GeolocationPermission, true);
             break;
         case MouseLock:
             d->adapter->grantMouseLockPermission(true);
             break;
         case Notifications:
-            d->adapter->runUserNotificationRequestCallback(securityOrigin, true);
+            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::NotificationPermission, true);
             break;
         }
     } else { // if (policy == PermissionDeniedByUser)
@@ -1995,13 +1976,13 @@ void QWebEnginePage::setFeaturePermission(const QUrl &securityOrigin, QWebEngine
             d->adapter->grantMediaAccessPermission(securityOrigin, WebContentsAdapterClient::MediaNone);
             break;
         case Geolocation:
-            d->adapter->runGeolocationRequestCallback(securityOrigin, false);
+            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::GeolocationPermission, false);
             break;
         case MouseLock:
             d->adapter->grantMouseLockPermission(false);
             break;
         case Notifications:
-            d->adapter->runUserNotificationRequestCallback(securityOrigin, false);
+            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::NotificationPermission, false);
             break;
         }
     }
@@ -2372,7 +2353,9 @@ void QWebEnginePage::javaScriptAlert(const QUrl &securityOrigin, const QString &
 {
     Q_UNUSED(securityOrigin);
 #if QT_CONFIG(messagebox)
-    QMessageBox::information(view(), QStringLiteral("Javascript Alert - %1").arg(url().toString()), msg);
+    QMessageBox::information(view(),
+                             QStringLiteral("Javascript Alert - %1").arg(url().toString()),
+                             msg.toHtmlEscaped());
 #else
     Q_UNUSED(msg);
 #endif // QT_CONFIG(messagebox)
@@ -2382,7 +2365,11 @@ bool QWebEnginePage::javaScriptConfirm(const QUrl &securityOrigin, const QString
 {
     Q_UNUSED(securityOrigin);
 #if QT_CONFIG(messagebox)
-    return (QMessageBox::information(view(), QStringLiteral("Javascript Confirm - %1").arg(url().toString()), msg, QMessageBox::Ok, QMessageBox::Cancel) == QMessageBox::Ok);
+    return (QMessageBox::information(view(),
+                                     QStringLiteral("Javascript Confirm - %1").arg(url().toString()),
+                                     msg.toHtmlEscaped(),
+                                     QMessageBox::Ok,
+                                     QMessageBox::Cancel) == QMessageBox::Ok);
 #else
     Q_UNUSED(msg);
     return false;
@@ -2395,7 +2382,12 @@ bool QWebEnginePage::javaScriptPrompt(const QUrl &securityOrigin, const QString 
 #if QT_CONFIG(inputdialog)
     bool ret = false;
     if (result)
-        *result = QInputDialog::getText(view(), QStringLiteral("Javascript Prompt - %1").arg(url().toString()), msg, QLineEdit::Normal, defaultValue, &ret);
+        *result = QInputDialog::getText(view(),
+                                        QStringLiteral("Javascript Prompt - %1").arg(url().toString()),
+                                        msg.toHtmlEscaped(),
+                                        QLineEdit::Normal,
+                                        defaultValue.toHtmlEscaped(),
+                                        &ret);
     return ret;
 #else
     Q_UNUSED(msg);

@@ -763,8 +763,6 @@ static void updateSystemPrivate()
         const ushort group = res.toString().at(0).unicode();
         if (group != globalLocaleData.m_decimal)
             globalLocaleData.m_group = group;
-        else if (group == globalLocaleData.m_group)
-            qWarning("System-supplied decimal and grouping character are both 0x%hx", group);
     }
 
     res = sys_locale->query(QSystemLocale::ZeroDigit, QVariant());
@@ -2559,19 +2557,18 @@ QDateTime QLocale::toDateTime(const QString &string, const QString &format) cons
 QDateTime QLocale::toDateTime(const QString &string, const QString &format, QCalendar cal) const
 {
 #if QT_CONFIG(datetimeparser)
-    QTime time;
-    QDate date;
+    QDateTime datetime;
 
     QDateTimeParser dt(QMetaType::QDateTime, QDateTimeParser::FromString, cal);
     dt.setDefaultLocale(*this);
-    if (dt.parseFormat(format) && dt.fromString(string, &date, &time))
-        return QDateTime(date, time);
+    if (dt.parseFormat(format) && dt.fromString(string, &datetime))
+        return datetime;
 #else
     Q_UNUSED(string);
     Q_UNUSED(format);
     Q_UNUSED(cal);
 #endif
-    return QDateTime(QDate(), QTime(-1, -1, -1));
+    return QDateTime();
 }
 #endif // datestring
 

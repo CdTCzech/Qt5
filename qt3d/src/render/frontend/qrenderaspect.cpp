@@ -318,6 +318,7 @@ QRenderAspectPrivate::QRenderAspectPrivate(QRenderAspect::RenderType type)
 
     m_updateWorldBoundingVolumeJob->addDependency(m_worldTransformJob);
     m_updateWorldBoundingVolumeJob->addDependency(m_calculateBoundingVolumeJob);
+    m_calculateBoundingVolumeJob->addDependency(m_updateTreeEnabledJob);
     m_expandBoundingVolumeJob->addDependency(m_updateWorldBoundingVolumeJob);
     m_updateLevelOfDetailJob->addDependency(m_expandBoundingVolumeJob);
     m_pickBoundingVolumeJob->addDependency(m_expandBoundingVolumeJob);
@@ -712,12 +713,8 @@ QVector<Qt3DCore::QAspectJobPtr> QRenderAspect::jobsToExecute(qint64 time)
         jobs.append(bufferJobs);
 
         const bool entitiesEnabledDirty = dirtyBitsForFrame & AbstractRenderer::EntityEnabledDirty;
-        if (entitiesEnabledDirty) {
+        if (entitiesEnabledDirty)
             jobs.push_back(d->m_updateTreeEnabledJob);
-            // This dependency is added here because we clear all dependencies
-            // at the start of this function.
-            d->m_calculateBoundingVolumeJob->addDependency(d->m_updateTreeEnabledJob);
-        }
 
         if (dirtyBitsForFrame & AbstractRenderer::TransformDirty) {
             jobs.push_back(d->m_worldTransformJob);
@@ -766,9 +763,10 @@ QVariant QRenderAspect::executeCommand(const QStringList &args)
             if (args.front() == QLatin1String("framepaths"))
                 return Qt3DRender::QFrameGraphNodePrivate::get(fg)->dumpFrameGraphPaths().join(QLatin1String("\n"));
             if (args.front() == QLatin1String("filterstates")) {
-                auto res = Qt3DRender::QFrameGraphNodePrivate::get(fg)->dumpFrameGraphFilterState().join(QLatin1String("\n"));
-                res += dumpSGFilterState(d->m_nodeManagers->techniqueManager(),
-                                         d->m_renderer->contextInfo(), d->m_root).join(QLatin1String("\n"));
+                const auto activeContextInfo = d->m_renderer->contextInfo();
+                QString res = QLatin1String("Active Graphics API: ") + activeContextInfo->toString() + QLatin1String("\n");
+                res += QLatin1String("Render Views:\n  ") + Qt3DRender::QFrameGraphNodePrivate::get(fg)->dumpFrameGraphFilterState().join(QLatin1String("\n  ")) + QLatin1String("\n");
+                res += QLatin1String("Scene Graph:\n  ") + dumpSGFilterState(d->m_nodeManagers->techniqueManager(), activeContextInfo, d->m_root).join(QLatin1String("\n  "));
                 return res;
             }
         }
@@ -843,6 +841,9 @@ void QRenderAspect::onUnregistered()
     d->unregisterBackendTypes();
 
     d->m_renderer->releaseGraphicsResources();
+
+    if (d->m_aspectManager)
+        d->services()->eventFilterService()->unregisterEventFilter(d->m_pickEventFilter.data());
 
     delete d->m_nodeManagers;
     d->m_nodeManagers = nullptr;

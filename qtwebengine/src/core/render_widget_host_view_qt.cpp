@@ -1,3 +1,4 @@
+
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
@@ -216,13 +217,13 @@ public:
     float GetRawY(size_t pointer_index) const override { return touchPoints.at(pointer_index).screenPos().y(); }
     float GetTouchMajor(size_t pointer_index) const override
     {
-        QRectF touchRect = touchPoints.at(pointer_index).rect();
-        return std::max(touchRect.height(), touchRect.width());
+        QSizeF diams = touchPoints.at(pointer_index).ellipseDiameters();
+        return std::max(diams.height(), diams.width());
     }
     float GetTouchMinor(size_t pointer_index) const override
     {
-        QRectF touchRect = touchPoints.at(pointer_index).rect();
-        return std::min(touchRect.height(), touchRect.width());
+        QSizeF diams = touchPoints.at(pointer_index).ellipseDiameters();
+        return std::min(diams.height(), diams.width());
     }
     float GetOrientation(size_t pointer_index) const override
     {
@@ -1529,7 +1530,21 @@ void RenderWidgetHostViewQt::WheelEventAck(const blink::WebMouseWheelEvent &even
         m_mouseWheelPhaseHandler.AddPhaseIfNeededAndScheduleEndEvent(webEvent, false);
         host()->ForwardWheelEvent(webEvent);
     }
-    // TODO: We could forward unhandled wheelevents to our parent.
+}
+
+void RenderWidgetHostViewQt::GestureEventAck(const blink::WebGestureEvent &event, content::InputEventAckState ack_result)
+{
+    // Forward unhandled scroll events back as wheel events
+    if (event.GetType() != blink::WebInputEvent::kGestureScrollUpdate)
+        return;
+    switch (ack_result) {
+    case content::INPUT_EVENT_ACK_STATE_NOT_CONSUMED:
+    case content::INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS:
+        WebEventFactory::sendUnhandledWheelEvent(event, delegate());
+        break;
+    default:
+        break;
+    }
 }
 
 content::MouseWheelPhaseHandler *RenderWidgetHostViewQt::GetMouseWheelPhaseHandler()

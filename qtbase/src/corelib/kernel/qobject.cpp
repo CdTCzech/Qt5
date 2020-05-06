@@ -4493,15 +4493,14 @@ QDebug operator<<(QDebug dbg, const QObject *o)
     that values of a given enum can be used as flags and combined using the
     bitwise OR operator. For namespaces use \l Q_FLAG_NS() instead.
 
-    The macro must be placed after the enum declaration.
+    The macro must be placed after the enum declaration. The declaration of
+    the flags type is done using the \l Q_DECLARE_FLAGS() macro.
 
-    For example, in QLibrary, the \l{QLibrary::LoadHints}{LoadHints} flag is
+    For example, in QItemSelectionModel, the
+    \l{QItemSelectionModel::SelectionFlags}{SelectionFlags} flag is
     declared in the following way:
 
     \snippet code/src_corelib_kernel_qobject.cpp 39
-
-    The declaration of the flags themselves is performed in the public section
-    of the QLibrary class itself, using the \l Q_DECLARE_FLAGS() macro.
 
     \note The Q_FLAG macro takes care of registering individual flag values
     with the meta-object system, so it is unnecessary to use Q_ENUM()
@@ -4615,6 +4614,14 @@ QDebug operator<<(QDebug dbg, const QObject *o)
     \c{staticMetaObject} is of type QMetaObject and provides access to the
     enums declared with Q_ENUM_NS/Q_FLAG_NS.
 
+    For example:
+
+    \code
+    namespace test {
+    Q_NAMESPACE
+    ...
+    \endcode
+
     \sa Q_NAMESPACE_EXPORT
 */
 
@@ -4630,6 +4637,14 @@ QDebug operator<<(QDebug dbg, const QObject *o)
     \c{staticMetaObject} variable that gets defined in the namespace
     is declared with the supplied \a EXPORT_MACRO qualifier. This is
     useful if the object needs to be exported from a dynamic library.
+
+    For example:
+
+    \code
+    namespace test {
+    Q_NAMESPACE_EXPORT(EXPORT_MACRO)
+    ...
+    \endcode
 
     \sa Q_NAMESPACE, {Creating Shared Libraries}
 */

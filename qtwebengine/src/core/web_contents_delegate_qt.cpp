@@ -663,14 +663,17 @@ void WebContentsDelegateQt::overrideWebPreferences(content::WebContents *webCont
     m_viewClient->webEngineSettings()->overrideWebPreferences(webContents, webPreferences);
 }
 
-QWeakPointer<WebContentsAdapter> WebContentsDelegateQt::createWindow(std::unique_ptr<content::WebContents> new_contents, WindowOpenDisposition disposition, const gfx::Rect& initial_pos, bool user_gesture)
+QSharedPointer<WebContentsAdapter>
+WebContentsDelegateQt::createWindow(std::unique_ptr<content::WebContents> new_contents,
+                                    WindowOpenDisposition disposition, const gfx::Rect &initial_pos,
+                                    bool user_gesture)
 {
     QSharedPointer<WebContentsAdapter> newAdapter = QSharedPointer<WebContentsAdapter>::create(std::move(new_contents));
 
-    m_viewClient->adoptNewWindow(newAdapter, static_cast<WebContentsAdapterClient::WindowOpenDisposition>(disposition), user_gesture, toQt(initial_pos), m_initialTargetUrl);
-
-    // If the client didn't reference the adapter, it will be deleted now, and the weak pointer zeroed.
-    return newAdapter;
+    return m_viewClient->adoptNewWindow(
+            std::move(newAdapter),
+            static_cast<WebContentsAdapterClient::WindowOpenDisposition>(disposition), user_gesture,
+            toQt(initial_pos), m_initialTargetUrl);
 }
 
 void WebContentsDelegateQt::allowCertificateError(const QSharedPointer<CertificateErrorController> &errorController)
@@ -683,14 +686,9 @@ void WebContentsDelegateQt::selectClientCert(const QSharedPointer<ClientCertSele
     m_viewClient->selectClientCert(selectController);
 }
 
-void WebContentsDelegateQt::requestGeolocationPermission(const QUrl &requestingOrigin)
+void WebContentsDelegateQt::requestFeaturePermission(ProfileAdapter::PermissionType feature, const QUrl &requestingOrigin)
 {
-    m_viewClient->runGeolocationPermissionRequest(requestingOrigin);
-}
-
-void WebContentsDelegateQt::requestUserNotificationPermission(const QUrl &requestingOrigin)
-{
-    m_viewClient->runUserNotificationPermissionRequest(requestingOrigin);
+    m_viewClient->runFeaturePermissionRequest(feature, requestingOrigin);
 }
 
 extern WebContentsAdapterClient::NavigationType pageTransitionToNavigationType(ui::PageTransition transition);
@@ -800,6 +798,15 @@ bool WebContentsDelegateQt::TakeFocus(content::WebContents *source, bool reverse
 {
     Q_UNUSED(source);
     return m_viewClient->passOnFocus(reverse);
+}
+
+void WebContentsDelegateQt::ContentsZoomChange(bool zoom_in)
+{
+    WebContentsAdapter *adapter = webContentsAdapter();
+    if (zoom_in)
+        adapter->setZoomFactor(adapter->currentZoomFactor() + 0.1f);
+    else
+        adapter->setZoomFactor(adapter->currentZoomFactor() - 0.1f);
 }
 
 FaviconManager *WebContentsDelegateQt::faviconManager()
