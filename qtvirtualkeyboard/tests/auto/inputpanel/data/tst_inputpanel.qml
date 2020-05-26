@@ -104,6 +104,7 @@ Rectangle {
                 textInput.text = ""
             }
             textInput.inputMethodHints = data !== undefined && data.hasOwnProperty("initInputMethodHints") ? data.initInputMethodHints : Qt.ImhNone
+            textInput.selectByMouse = false
             handwritingInputPanel.available = false
             inputPanel.setHandwritingMode(false)
             textInput.forceActiveFocus()
@@ -423,6 +424,8 @@ Rectangle {
             return [
                 { initInputMethodHints: Qt.ImhNoPredictiveText, toggleShiftCount: 0, inputSequence: "aaa bbb", outputText: "Aaa bbb", autoCapitalizationEnabled: true, toggleShiftEnabled: true },
                 { initInputMethodHints: Qt.ImhNoPredictiveText, toggleShiftCount: 1, inputSequence: "aaa bbb", outputText: "aaa bbb", autoCapitalizationEnabled: true, toggleShiftEnabled: true },
+                { initInputMethodHints: Qt.ImhNoPredictiveText, toggleShiftCount: 2, inputSequence: "aaa. bbb", outputText: "Aaa. Bbb", autoCapitalizationEnabled: true, toggleShiftEnabled: true },
+                { initInputMethodHints: Qt.ImhNoPredictiveText, toggleShiftCount: 2, inputSequence: "aaa.bbb", outputText: "Aaa.bbb", autoCapitalizationEnabled: true, toggleShiftEnabled: true },
                 { initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, toggleShiftCount: 0, inputSequence: "aaa bbb", outputText: "aaa bbb", autoCapitalizationEnabled: false, toggleShiftEnabled: true },
                 { initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, toggleShiftCount: 0, inputSequence: "aaa. bbb", outputText: "aaa. bbb", autoCapitalizationEnabled: false, toggleShiftEnabled: true },
                 { initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, toggleShiftCount: 1, inputSequence: "aaa bbb", outputText: "Aaa bbb", autoCapitalizationEnabled: false, toggleShiftEnabled: true },
@@ -2078,6 +2081,18 @@ Rectangle {
             verify(inputPanel.virtualKeyClick(Qt.Key_A))
             verify(inputPanel.virtualKeyClick(Qt.Key_Return))
             compare(inputPanel.shadowInput.text, "")
+        }
+
+        function test_fullScreenModeSelectByMouse() {
+            prepareTest()
+
+            inputPanel.setFullScreenMode(true)
+
+            // The default value for TextInput/TextEdit is false.
+            compare(inputPanel.shadowInput.selectByMouse, false)
+
+            textInput.selectByMouse = true
+            compare(inputPanel.shadowInput.selectByMouse, true)
         }
 
         function test_userDictionary_data() {

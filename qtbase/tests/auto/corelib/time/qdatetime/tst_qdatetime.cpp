@@ -127,8 +127,10 @@ private slots:
 #ifdef Q_OS_WIN
     void fromString_LOCALE_ILDATE();
 #endif
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     void fromStringToStringLocale_data();
     void fromStringToStringLocale();
+#endif // ### Qt 6: remove
 
     void offsetFromUtc();
     void setOffsetFromUtc();
@@ -295,9 +297,9 @@ void tst_QDateTime::initTestCase()
 
 void tst_QDateTime::init()
 {
-#if defined(Q_OS_WIN32)
+#if defined(Q_OS_WIN32) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     SetThreadLocale(MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT));
-#endif
+#endif // ### Qt 6: remove
 }
 
 QString tst_QDateTime::str( int y, int month, int d, int h, int min, int s )
@@ -834,8 +836,10 @@ void tst_QDateTime::toString_isoDate()
     QFETCH(Qt::DateFormat, format);
     QFETCH(QString, expected);
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QLocale oldLocale;
     QLocale::setDefault(QLocale("en_US"));
+#endif // ### Qt 6: remove
 
     QString result = datetime.toString(format);
     QCOMPARE(result, expected);
@@ -854,7 +858,9 @@ void tst_QDateTime::toString_isoDate()
         QCOMPARE(resultDatetime, QDateTime());
     }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QLocale::setDefault(oldLocale);
+#endif // ### Qt 6: remove
 }
 
 void tst_QDateTime::toString_isoDate_extra()
@@ -1763,7 +1769,7 @@ void tst_QDateTime::daylightSavingsTimeChange()
     // because some functions did not reset the flag when moving in or out of DST.
 
     // WARNING: This only tests anything if there's a Daylight Savings Time change
-    // in the current locale between inDST and outDST.
+    // in the current time-zone between inDST and outDST.
     // This is true for Central European Time and may be elsewhere.
 
     QFETCH(QDate, inDST);
@@ -2243,8 +2249,12 @@ void tst_QDateTime::fromStringDateFormat_data()
     // Spaces as separators:
     QTest::newRow("sec-milli space")
         << QString("2000-01-02 03:04:05 678") << Qt::ISODate
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+        << invalidDateTime();
+#else
         // Should be invalid, but we ignore trailing cruft (in some cases)
         << QDateTime(QDate(2000, 1, 2), QTime(3, 4, 5));
+#endif
     QTest::newRow("min-sec space")
         << QString("2000-01-02 03:04 05.678") << Qt::ISODate << QDateTime();
     QTest::newRow("hour-min space")
@@ -2332,7 +2342,11 @@ void tst_QDateTime::fromStringDateFormat_data()
         << Qt::ISODate << QDateTime(QDate(2012, 1, 1), QTime(8, 0, 0, 0), Qt::LocalTime);
     // Test invalid characters (should ignore invalid characters at end of string).
     QTest::newRow("ISO invalid character at end") << QString::fromLatin1("2012-01-01T08:00:00!")
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+        << Qt::ISODate << invalidDateTime();
+#else
         << Qt::ISODate << QDateTime(QDate(2012, 1, 1), QTime(8, 0, 0, 0), Qt::LocalTime);
+#endif
     QTest::newRow("ISO invalid character at front") << QString::fromLatin1("!2012-01-01T08:00:00")
         << Qt::ISODate << invalidDateTime();
     QTest::newRow("ISO invalid character both ends") << QString::fromLatin1("!2012-01-01T08:00:00!")
@@ -2540,6 +2554,11 @@ void tst_QDateTime::fromStringStringFormat()
 
     QDateTime dt = QDateTime::fromString(string, format);
 
+    if (expected.isValid()) {
+        QCOMPARE(dt.timeSpec(), expected.timeSpec());
+        if (expected.timeSpec() == Qt::TimeZone)
+            QCOMPARE(dt.timeZone(), expected.timeZone());
+    }
     QCOMPARE(dt, expected);
 }
 
@@ -2604,6 +2623,9 @@ void tst_QDateTime::fromString_LOCALE_ILDATE()
 }
 #endif
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
+
 void tst_QDateTime::fromStringToStringLocale_data()
 {
     QTest::addColumn<QLocale>("locale");
@@ -2635,6 +2657,8 @@ void tst_QDateTime::fromStringToStringLocale()
 #undef ROUNDTRIP
     QLocale::setDefault(def);
 }
+QT_WARNING_POP
+#endif // ### Qt 6: remove
 
 void tst_QDateTime::offsetFromUtc()
 {
@@ -2933,19 +2957,19 @@ void tst_QDateTime::fewDigitsInYear() const
 void tst_QDateTime::printNegativeYear() const
 {
     {
-        QDateTime date(QDate(-20, 10, 11));
+        QDateTime date(QDate(-20, 10, 11).startOfDay());
         QVERIFY(date.isValid());
         QCOMPARE(date.toString(QLatin1String("yyyy")), QString::fromLatin1("-0020"));
     }
 
     {
-        QDateTime date(QDate(-3, 10, 11));
+        QDateTime date(QDate(-3, 10, 11).startOfDay());
         QVERIFY(date.isValid());
         QCOMPARE(date.toString(QLatin1String("yyyy")), QString::fromLatin1("-0003"));
     }
 
     {
-        QDateTime date(QDate(-400, 10, 11));
+        QDateTime date(QDate(-400, 10, 11).startOfDay());
         QVERIFY(date.isValid());
         QCOMPARE(date.toString(QLatin1String("yyyy")), QString::fromLatin1("-0400"));
     }

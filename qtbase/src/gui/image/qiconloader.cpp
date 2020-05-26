@@ -714,7 +714,7 @@ QIconLoaderEngineEntry *QIconLoaderEngine::entryForSize(const QThemeIconInfo &in
 
     // Find the minimum distance icon
     int minimalSize = INT_MAX;
-    QIconLoaderEngineEntry *closestMatch = 0;
+    QIconLoaderEngineEntry *closestMatch = nullptr;
     for (int i = 0; i < numEntries; ++i) {
         QIconLoaderEngineEntry *entry = info.entries.at(i);
         int distance = directorySizeDistance(entry->dir, iconsize, scale);
@@ -797,8 +797,12 @@ QPixmap ScalableEntry::pixmap(const QSize &size, QIcon::Mode mode, QIcon::State 
     if (svgIcon.isNull())
         svgIcon = QIcon(filename);
 
-    // Simply reuse svg icon engine
-    return svgIcon.pixmap(size, mode, state);
+    // Bypass QIcon API, as that will scale by device pixel ratio of the
+    // highest DPR screen since we're not passing on any QWindow.
+    if (QIconEngine *engine = svgIcon.data_ptr() ? svgIcon.data_ptr()->engine : nullptr)
+        return engine->pixmap(size, mode, state);
+
+    return QPixmap();
 }
 
 QPixmap QIconLoaderEngine::pixmap(const QSize &size, QIcon::Mode mode,

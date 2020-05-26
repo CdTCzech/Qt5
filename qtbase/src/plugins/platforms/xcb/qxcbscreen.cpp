@@ -467,7 +467,7 @@ const xcb_visualtype_t *QXcbVirtualDesktop::visualForId(xcb_visualid_t visualid)
 {
     QMap<xcb_visualid_t, xcb_visualtype_t>::const_iterator it = m_visuals.find(visualid);
     if (it == m_visuals.constEnd())
-        return 0;
+        return nullptr;
     return &*it;
 }
 
@@ -587,7 +587,7 @@ QWindow *QXcbScreen::topLevelAt(const QPoint &p) const
     do {
         auto translate_reply = Q_XCB_REPLY_UNCHECKED(xcb_translate_coordinates, xcb_connection(), parent, child, x, y);
         if (!translate_reply) {
-            return 0;
+            return nullptr;
         }
 
         parent = child;
@@ -596,14 +596,14 @@ QWindow *QXcbScreen::topLevelAt(const QPoint &p) const
         y = translate_reply->dst_y;
 
         if (!child || child == root)
-            return 0;
+            return nullptr;
 
         QPlatformWindow *platformWindow = connection()->platformWindowFromId(child);
         if (platformWindow)
             return platformWindow->window();
     } while (parent != child);
 
-    return 0;
+    return nullptr;
 }
 
 void QXcbScreen::windowShown(QXcbWindow *window)

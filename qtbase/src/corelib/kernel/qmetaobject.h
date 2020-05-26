@@ -262,10 +262,13 @@ public:
     bool isDesignable(const QObject *obj = nullptr) const;
     bool isScriptable(const QObject *obj = nullptr) const;
     bool isStored(const QObject *obj = nullptr) const;
-    bool isEditable(const QObject *obj = nullptr) const;
+#if QT_DEPRECATED_SINCE(5, 15)
+    QT_DEPRECATED_VERSION_5_15 bool isEditable(const QObject *obj = nullptr) const;
+#endif
     bool isUser(const QObject *obj = nullptr) const;
     bool isConstant() const;
     bool isFinal() const;
+    bool isRequired() const;
 
     bool isFlagType() const;
     bool isEnumType() const;

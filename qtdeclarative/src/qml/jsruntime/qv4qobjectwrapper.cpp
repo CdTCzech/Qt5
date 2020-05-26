@@ -638,10 +638,11 @@ void QObjectWrapper::markWrapper(QObject *object, MarkStack *markStack)
     if (!ddata)
         return;
 
-    if (ddata->jsEngineId == markStack->engine->m_engineId)
+    const QV4::ExecutionEngine *engine = markStack->engine();
+    if (ddata->jsEngineId == engine->m_engineId)
         ddata->jsWrapper.markOnce(markStack);
-    else  if (markStack->engine->m_multiplyWrappedQObjects && ddata->hasTaintedV4Object)
-        markStack->engine->m_multiplyWrappedQObjects->mark(object, markStack);
+    else if (engine->m_multiplyWrappedQObjects && ddata->hasTaintedV4Object)
+        engine->m_multiplyWrappedQObjects->mark(object, markStack);
 }
 
 void QObjectWrapper::setProperty(ExecutionEngine *engine, int propertyIndex, const Value &value)
@@ -1654,7 +1655,7 @@ static QV4::ReturnedValue CallOverloaded(const QQmlObjectOrGadget &object, const
 }
 
 CallArgument::CallArgument()
-: type(QVariant::Invalid)
+: type(QMetaType::UnknownType)
 {
 }
 
@@ -2077,7 +2078,7 @@ ReturnedValue QObjectMethod::callInternal(const Value *thisObject, const Value *
         if (!d()->valueTypeWrapper)
             return Encode::undefined();
 
-        object = QQmlObjectOrGadget(d()->propertyCache(), d()->valueTypeWrapper->gadgetPtr);
+        object = QQmlObjectOrGadget(d()->propertyCache(), d()->valueTypeWrapper->gadgetPtr());
     }
 
     QQmlPropertyData method;

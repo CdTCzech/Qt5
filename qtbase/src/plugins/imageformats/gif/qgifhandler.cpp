@@ -147,8 +147,8 @@ private:
 */
 QGIFFormat::QGIFFormat()
 {
-    globalcmap = 0;
-    localcmap = 0;
+    globalcmap = nullptr;
+    localcmap = nullptr;
     lncols = 0;
     gncols = 0;
     disposal = NoDisposal;
@@ -160,9 +160,9 @@ QGIFFormat::QGIFFormat()
     lcmap = false;
     newFrame = false;
     partialNewFrame = false;
-    table[0] = 0;
-    table[1] = 0;
-    stack = 0;
+    table[0] = nullptr;
+    table[1] = nullptr;
+    stack = nullptr;
 }
 
 /*!
@@ -550,7 +550,7 @@ int QGIFFormat::decode(QImage *image, const uchar *buffer, int length,
                         }
                         oldcode=incode;
                         const int h = image->height();
-                        QRgb *line = 0;
+                        QRgb *line = nullptr;
                         if (!out_of_bounds && h > y)
                             line = (QRgb*)FAST_SCAN_LINE(bits, bpl, y);
                         while (sp>stack) {
@@ -1214,12 +1214,5 @@ int QGifHandler::currentImageNumber() const
 {
     return frameNumber;
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-QByteArray QGifHandler::name() const
-{
-    return "gif";
-}
-#endif
 
 QT_END_NAMESPACE

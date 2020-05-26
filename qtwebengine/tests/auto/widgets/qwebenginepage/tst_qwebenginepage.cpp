@@ -198,6 +198,8 @@ private Q_SLOTS:
     void dataURLFragment();
     void devTools();
     void openLinkInDifferentProfile();
+    void openLinkInNewPage_data();
+    void openLinkInNewPage();
     void triggerActionWithoutMenu();
     void dynamicFrame();
 
@@ -226,6 +228,7 @@ private Q_SLOTS:
 
     void customUserAgentInNewTab();
     void renderProcessCrashed();
+    void renderProcessPid();
     void backgroundColor();
 
 private:
@@ -799,7 +802,7 @@ void tst_QWebEnginePage::backActionUpdate()
     };
 
     QVERIFY(evaluateJavaScriptSync(page, "document.getElementsByName('frame_b')[0].contentDocument == undefined").toBool());
-    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, 0, firstAnchorCenterInFrame(page, "frame_c"));
+    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, {}, firstAnchorCenterInFrame(page, "frame_c"));
     QTRY_VERIFY(evaluateJavaScriptSync(page, "document.getElementsByName('frame_b')[0].contentDocument != undefined").toBool());
     QTRY_VERIFY(action->isEnabled());
 }
@@ -827,6 +830,7 @@ void tst_QWebEnginePage::localStorageVisibility()
     // Toggle local setting for every page and...
     webPage1.settings()->setAttribute(QWebEngineSettings::LocalStorageEnabled, false);
     webPage2.settings()->setAttribute(QWebEngineSettings::LocalStorageEnabled, true);
+    // TODO: note this setting is flaky, consider settings().commit()
     // ...first check second page (for storage to appear) as applying settings is batched and done asynchronously
     QTRY_VERIFY(evaluateJavaScriptSync(&webPage2, QString("(window.localStorage != undefined)")).toBool());
     // Switching the feature off does not actively remove the object from webPage1.
@@ -983,7 +987,7 @@ void tst_QWebEnginePage::findText()
     {
         CallbackSpy<bool> callbackSpy;
         QSignalSpy signalSpy(m_view->page(), &QWebEnginePage::findTextFinished);
-        m_view->findText("", 0, callbackSpy.ref());
+        m_view->findText("", {}, callbackSpy.ref());
         QVERIFY(callbackSpy.wasCalled());
         QCOMPARE(signalSpy.count(), 1);
         QTRY_COMPARE(m_view->selectedText(), QString("foo bar"));
@@ -994,7 +998,7 @@ void tst_QWebEnginePage::findText()
     {
         CallbackSpy<bool> callbackSpy;
         QSignalSpy signalSpy(m_view->page(), &QWebEnginePage::findTextFinished);
-        m_view->findText("Will not be found", 0, callbackSpy.ref());
+        m_view->findText("Will not be found", {}, callbackSpy.ref());
         QCOMPARE(callbackSpy.waitForResult(), false);
         QTRY_COMPARE(signalSpy.count(), 1);
         auto result = signalSpy.takeFirst().value(0).value<QWebEngineFindTextResult>();
@@ -1011,7 +1015,7 @@ void tst_QWebEnginePage::findText()
     {
         CallbackSpy<bool> callbackSpy;
         QSignalSpy signalSpy(m_view->page(), &QWebEnginePage::findTextFinished);
-        m_view->findText("foo", 0, callbackSpy.ref());
+        m_view->findText("foo", {}, callbackSpy.ref());
         QVERIFY(callbackSpy.waitForResult());
         QTRY_COMPARE(signalSpy.count(), 1);
         QTRY_VERIFY(m_view->selectedText().isEmpty());
@@ -1022,7 +1026,7 @@ void tst_QWebEnginePage::findText()
     {
         CallbackSpy<bool> callbackSpy;
         QSignalSpy signalSpy(m_view->page(), &QWebEnginePage::findTextFinished);
-        m_view->findText("", 0, callbackSpy.ref());
+        m_view->findText("", {}, callbackSpy.ref());
         QTRY_VERIFY(callbackSpy.wasCalled());
         QTRY_COMPARE(signalSpy.count(), 1);
         QTRY_COMPARE(m_view->selectedText(), QString("foo"));
@@ -1032,8 +1036,8 @@ void tst_QWebEnginePage::findText()
     // should interrupt the first one.
     {
         QSignalSpy signalSpy(m_view->page(), &QWebEnginePage::findTextFinished);
-        m_view->findText("foo", 0);
-        m_view->findText("foo", 0);
+        m_view->findText("foo", {});
+        m_view->findText("foo", {});
         QTRY_COMPARE(signalSpy.count(), 2);
         QTRY_VERIFY(m_view->selectedText().isEmpty());
 
@@ -1088,11 +1092,11 @@ void tst_QWebEnginePage::findTextSuccessiveShouldCallAllCallbacks()
     QSignalSpy loadSpy(m_view, SIGNAL(loadFinished(bool)));
     m_view->setHtml(QString("<html><head></head><body><div>abcdefg abcdefg abcdefg abcdefg abcdefg</div></body></html>"));
     QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 1, 20000);
-    m_page->findText("abcde", 0, spy1.ref());
-    m_page->findText("abcd", 0, spy2.ref());
-    m_page->findText("abc", 0, spy3.ref());
-    m_page->findText("ab", 0, spy4.ref());
-    m_page->findText("a", 0, spy5.ref());
+    m_page->findText("abcde", {}, spy1.ref());
+    m_page->findText("abcd", {}, spy2.ref());
+    m_page->findText("abc", {}, spy3.ref());
+    m_page->findText("ab", {}, spy4.ref());
+    m_page->findText("a", {}, spy5.ref());
     spy5.waitForResult();
     QVERIFY(spy1.wasCalled());
     QVERIFY(spy2.wasCalled());
@@ -1113,10 +1117,10 @@ void tst_QWebEnginePage::findTextCalledOnMatch()
 
     // CALLBACK
     bool callbackCalled = false;
-    m_view->page()->findText("foo", 0, [this, &callbackCalled](bool found) {
+    m_view->page()->findText("foo", {}, [this, &callbackCalled](bool found) {
         QVERIFY(found);
 
-        m_view->page()->findText("bar", 0, [&callbackCalled](bool found) {
+        m_view->page()->findText("bar", {}, [&callbackCalled](bool found) {
             QVERIFY(found);
             callbackCalled = true;
         });
@@ -1150,7 +1154,7 @@ void tst_QWebEnginePage::findTextActiveMatchOrdinal()
 
     // Iterate over all "foo" matches.
     for (int i = 1; i <= 3; ++i) {
-        m_view->page()->findText("foo", 0);
+        m_view->page()->findText("foo", {});
         QTRY_COMPARE(findTextSpy.count(), 1);
         result = findTextSpy.takeFirst().value(0).value<QWebEngineFindTextResult>();
         QCOMPARE(result.numberOfMatches(), 3);
@@ -1158,7 +1162,7 @@ void tst_QWebEnginePage::findTextActiveMatchOrdinal()
     }
 
     // The last match is followed by the fist one.
-    m_view->page()->findText("foo", 0);
+    m_view->page()->findText("foo", {});
     QTRY_COMPARE(findTextSpy.count(), 1);
     result = findTextSpy.takeFirst().value(0).value<QWebEngineFindTextResult>();
     QCOMPARE(result.numberOfMatches(), 3);
@@ -1172,14 +1176,14 @@ void tst_QWebEnginePage::findTextActiveMatchOrdinal()
     QCOMPARE(result.activeMatch(), 3);
 
     // Finding another word resets the activeMatch.
-    m_view->page()->findText("bar", 0);
+    m_view->page()->findText("bar", {});
     QTRY_COMPARE(findTextSpy.count(), 1);
     result = findTextSpy.takeFirst().value(0).value<QWebEngineFindTextResult>();
     QCOMPARE(result.numberOfMatches(), 2);
     QCOMPARE(result.activeMatch(), 1);
 
     // If no match activeMatch is 0.
-    m_view->page()->findText("bla", 0);
+    m_view->page()->findText("bla", {});
     QTRY_COMPARE(findTextSpy.count(), 1);
     result = findTextSpy.takeFirst().value(0).value<QWebEngineFindTextResult>();
     QCOMPARE(result.numberOfMatches(), 0);
@@ -1966,8 +1970,7 @@ void tst_QWebEnginePage::urlChange()
     QUrl testUrl("http://test.qt.io/");
     m_view->setHtml(QStringLiteral("<h1>Test</h1"), testUrl);
 
-    QTRY_COMPARE(urlSpy.size(), 2);
-    QCOMPARE(urlSpy.takeFirst().value(0).toUrl(), QUrl("data:text/html;charset=UTF-8,%3Ch1%3ETest%3C%2Fh1"));
+    QTRY_COMPARE(urlSpy.size(), 1);
     QCOMPARE(urlSpy.takeFirst().value(0).toUrl(), testUrl);
 }
 
@@ -2079,7 +2082,7 @@ void tst_QWebEnginePage::requestedUrlAfterSetAndLoadFailures()
 
     page.load(second);
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 20000);
-    QCOMPARE(page.url(), second);
+    QCOMPARE(page.url(), first);
     QCOMPARE(page.requestedUrl(), second);
     QVERIFY(!spy.at(1).first().toBool());
 }
@@ -2779,8 +2782,8 @@ void tst_QWebEnginePage::setUrlThenLoads()
     QCOMPARE(baseUrlSync(m_page), extractBaseUrl(urlToLoad1));
 
     m_page->load(urlToLoad2);
-    QTRY_COMPARE(m_page->url(), urlToLoad2);
-    QTRY_COMPARE(m_page->requestedUrl(), urlToLoad2);
+    QCOMPARE(m_page->url(), urlToLoad1);
+    QCOMPARE(m_page->requestedUrl(), urlToLoad2);
     QCOMPARE(baseUrlSync(m_page), extractBaseUrl(urlToLoad1));
     QTRY_COMPARE(startedSpy.count(), 3);
 
@@ -3293,7 +3296,7 @@ void tst_QWebEnginePage::dataURLFragment()
     QTRY_COMPARE(loadFinishedSpy.count(), 1);
 
     QSignalSpy urlChangedSpy(m_page, SIGNAL(urlChanged(QUrl)));
-    QTest::mouseClick(m_view->focusProxy(), Qt::LeftButton, 0, elementCenter(m_page, "link"));
+    QTest::mouseClick(m_view->focusProxy(), Qt::LeftButton, {}, elementCenter(m_page, "link"));
     QVERIFY(urlChangedSpy.wait());
     QCOMPARE(m_page->url().fragment(), QStringLiteral("anchor"));
 
@@ -3303,7 +3306,7 @@ void tst_QWebEnginePage::dataURLFragment()
                     "</body></html>", QUrl("http://test.qt.io/mytest.html"));
     QTRY_COMPARE(loadFinishedSpy.count(), 2);
 
-    QTest::mouseClick(m_view->focusProxy(), Qt::LeftButton, 0, elementCenter(m_page, "link"));
+    QTest::mouseClick(m_view->focusProxy(), Qt::LeftButton, {}, elementCenter(m_page, "link"));
     QVERIFY(urlChangedSpy.wait());
     QCOMPARE(m_page->url(), QUrl("http://test.qt.io/mytest.html#anchor"));
 }
@@ -3325,7 +3328,7 @@ void tst_QWebEnginePage::devTools()
     QCOMPARE(devToolsPage.devToolsPage(), nullptr);
     QCOMPARE(devToolsPage.inspectedPage(), &inspectedPage1);
 
-    QTRY_COMPARE(spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 30000);
     QVERIFY(spy.takeFirst().value(0).toBool());
 
     devToolsPage.setInspectedPage(&inspectedPage2);
@@ -3337,7 +3340,7 @@ void tst_QWebEnginePage::devTools()
     QCOMPARE(devToolsPage.devToolsPage(), nullptr);
     QCOMPARE(devToolsPage.inspectedPage(), &inspectedPage2);
 
-    QTRY_COMPARE(spy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 30000);
     QVERIFY(spy.takeFirst().value(0).toBool());
 
     devToolsPage.setInspectedPage(nullptr);
@@ -3373,9 +3376,165 @@ void tst_QWebEnginePage::openLinkInDifferentProfile()
     QTRY_COMPARE(spy1.count(), 1);
     QVERIFY(spy1.takeFirst().value(0).toBool());
     page1.targetPage = &page2;
-    QTest::mouseClick(view.focusProxy(), Qt::MiddleButton, 0, elementCenter(&page1, "link"));
+    QTest::mouseClick(view.focusProxy(), Qt::MiddleButton, {}, elementCenter(&page1, "link"));
     QTRY_COMPARE(spy2.count(), 1);
     QVERIFY(spy2.takeFirst().value(0).toBool());
+}
+
+// What does createWindow do?
+enum class OpenLinkInNewPageDecision {
+    // Returns nullptr,
+    ReturnNull,
+    // Returns this,
+    ReturnSelf,
+    // Returns page != this
+    ReturnOther,
+};
+
+// What causes createWindow to be called?
+enum class OpenLinkInNewPageCause {
+    // User clicks on a link with target=_blank.
+    TargetBlank,
+    // User clicks with MiddleButton.
+    MiddleClick,
+};
+
+// What happens after createWindow?
+enum class OpenLinkInNewPageEffect {
+    // The navigation request disappears into the ether.
+    Blocked,
+    // The navigation request becomes a navigation in the original page.
+    LoadInSelf,
+    // The navigation request becomes a navigation in a different page.
+    LoadInOther,
+};
+
+Q_DECLARE_METATYPE(OpenLinkInNewPageCause)
+Q_DECLARE_METATYPE(OpenLinkInNewPageDecision)
+Q_DECLARE_METATYPE(OpenLinkInNewPageEffect)
+
+void tst_QWebEnginePage::openLinkInNewPage_data()
+{
+    using Decision = OpenLinkInNewPageDecision;
+    using Cause = OpenLinkInNewPageCause;
+    using Effect = OpenLinkInNewPageEffect;
+
+    QTest::addColumn<Decision>("decision");
+    QTest::addColumn<Cause>("cause");
+    QTest::addColumn<Effect>("effect");
+
+    // Note that the meaning of returning nullptr from createWindow is not
+    // consistent between the TargetBlank and MiddleClick scenarios.
+    //
+    // With TargetBlank, the open-in-new-page disposition comes from the HTML
+    // target attribute; something the user is probably not aware of. Returning
+    // nullptr is interpreted as a decision by the app to block an unwanted
+    // popup.
+    //
+    // With MiddleClick, the open-in-new-page disposition comes from the user's
+    // explicit intent. Returning nullptr is then interpreted as a failure by
+    // the app to fulfill this intent, which we try to compensate by ignoring
+    // the disposition and performing the navigation request normally.
+
+    QTest::newRow("BlockPopup")     << Decision::ReturnNull  << Cause::TargetBlank << Effect::Blocked;
+    QTest::newRow("IgnoreIntent")   << Decision::ReturnNull  << Cause::MiddleClick << Effect::LoadInSelf;
+    QTest::newRow("OverridePopup")  << Decision::ReturnSelf  << Cause::TargetBlank << Effect::LoadInSelf;
+    QTest::newRow("OverrideIntent") << Decision::ReturnSelf  << Cause::MiddleClick << Effect::LoadInSelf;
+    QTest::newRow("AcceptPopup")    << Decision::ReturnOther << Cause::TargetBlank << Effect::LoadInOther;
+    QTest::newRow("AcceptIntent")   << Decision::ReturnOther << Cause::MiddleClick << Effect::LoadInOther;
+}
+
+void tst_QWebEnginePage::openLinkInNewPage()
+{
+    using Decision = OpenLinkInNewPageDecision;
+    using Cause = OpenLinkInNewPageCause;
+    using Effect = OpenLinkInNewPageEffect;
+
+    class Page : public QWebEnginePage
+    {
+    public:
+        Page *targetPage = nullptr;
+        QSignalSpy spy{this, &QWebEnginePage::loadFinished};
+        Page(QWebEngineProfile *profile) : QWebEnginePage(profile) {}
+    private:
+        QWebEnginePage *createWindow(WebWindowType) override { return targetPage; }
+    };
+
+    class View : public QWebEngineView
+    {
+    public:
+        View(Page *page)
+        {
+            resize(500, 500);
+            setPage(page);
+        }
+    };
+
+    QFETCH(Decision, decision);
+    QFETCH(Cause, cause);
+    QFETCH(Effect, effect);
+
+    QWebEngineProfile profile;
+    Page page1(&profile);
+    Page page2(&profile);
+    View view1(&page1);
+    View view2(&page2);
+
+    view1.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view1));
+
+    page1.setHtml("<html><body>"
+                  "<a id='link' href='data:,hello' target='_blank'>link</a>"
+                  "</body></html>");
+    QTRY_COMPARE(page1.spy.count(), 1);
+    QVERIFY(page1.spy.takeFirst().value(0).toBool());
+
+    switch (decision) {
+    case Decision::ReturnNull:
+        page1.targetPage = nullptr;
+        break;
+    case Decision::ReturnSelf:
+        page1.targetPage = &page1;
+        break;
+    case Decision::ReturnOther:
+        page1.targetPage = &page2;
+        break;
+    }
+
+    Qt::MouseButton button;
+    switch (cause) {
+    case Cause::TargetBlank:
+        button = Qt::LeftButton;
+        break;
+    case Cause::MiddleClick:
+        button = Qt::MiddleButton;
+        break;
+    }
+    QTest::mouseClick(view1.focusProxy(), button, {}, elementCenter(&page1, "link"));
+
+    switch (effect) {
+    case Effect::Blocked:
+        // Nothing to test
+        break;
+    case Effect::LoadInSelf:
+        QTRY_COMPARE(page1.spy.count(), 1);
+        QVERIFY(page1.spy.takeFirst().value(0).toBool());
+        QCOMPARE(page2.spy.count(), 0);
+        if (decision == Decision::ReturnSelf && cause == Cause::TargetBlank)
+            // History was discarded due to AddNewContents
+            QCOMPARE(page1.history()->count(), 1);
+        else
+            QCOMPARE(page1.history()->count(), 2);
+        QCOMPARE(page2.history()->count(), 0);
+        break;
+    case Effect::LoadInOther:
+        QTRY_COMPARE(page2.spy.count(), 1);
+        QVERIFY(page2.spy.takeFirst().value(0).toBool());
+        QCOMPARE(page1.spy.count(), 0);
+        QCOMPARE(page1.history()->count(), 1);
+        QCOMPARE(page2.history()->count(), 1);
+        break;
+    }
 }
 
 void tst_QWebEnginePage::triggerActionWithoutMenu()
@@ -3817,9 +3976,9 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     // Ensure pages are initialized
     inspectedPage.load(QStringLiteral("about:blank"));
     devToolsPage.load(QStringLiteral("about:blank"));
-    QTRY_COMPARE(inspectedSpy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(inspectedSpy.count(), 1, 30000);
     QCOMPARE(inspectedSpy.takeFirst().value(0), QVariant(true));
-    QTRY_COMPARE(devToolsSpy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 30000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
 
     // Open DevTools with Frozen inspectedPage
@@ -4330,7 +4489,7 @@ void tst_QWebEnginePage::customUserAgentInNewTab()
     QTRY_COMPARE(spy.count(), 1);
     QVERIFY(spy.takeFirst().value(0).toBool());
     QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("navigator.userAgent")).toString(), profile1.httpUserAgent());
-    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, 0, elementCenter(&page, "link"));
+    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, {}, elementCenter(&page, "link"));
     QTRY_VERIFY(page.newPage);
     QTRY_VERIFY(!lastUserAgent.isEmpty());
     QCOMPARE(lastUserAgent, profile1.httpUserAgent().toUtf8());
@@ -4345,7 +4504,7 @@ void tst_QWebEnginePage::customUserAgentInNewTab()
                  QString("'>link</a></body></html>"));
     QTRY_COMPARE(spy.count(), 1);
     QVERIFY(spy.takeFirst().value(0).toBool());
-    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, 0, elementCenter(&page, "link"));
+    QTest::mouseClick(view.focusProxy(), Qt::LeftButton, {}, elementCenter(&page, "link"));
     QTRY_VERIFY(page.newPage);
     QTRY_VERIFY(!lastUserAgent.isEmpty());
     QCOMPARE(lastUserAgent, profile2.httpUserAgent().toUtf8());
@@ -4371,6 +4530,24 @@ void tst_QWebEnginePage::renderProcessCrashed()
             status == QWebEnginePage::AbnormalTerminationStatus);
 }
 
+void tst_QWebEnginePage::renderProcessPid()
+{
+    QCOMPARE(m_page->renderProcessPid(), 0);
+
+    m_page->load(QUrl("about:blank"));
+    QSignalSpy spyFinished(m_page, &QWebEnginePage::loadFinished);
+    QVERIFY(spyFinished.wait());
+
+    QVERIFY(m_page->renderProcessPid() > 1);
+
+    bool crashed = false;
+    connect(m_page, &QWebEnginePage::renderProcessTerminated, [&]() { crashed = true; });
+    m_page->load(QUrl("chrome://crash"));
+    QTRY_VERIFY_WITH_TIMEOUT(crashed, 20000);
+
+    QCOMPARE(m_page->renderProcessPid(), 0);
+}
+
 void tst_QWebEnginePage::backgroundColor()
 {
     QWebEngineProfile profile;
@@ -4378,6 +4555,7 @@ void tst_QWebEnginePage::backgroundColor()
     QWebEnginePage *page = new QWebEnginePage(&profile, &view);
 
     view.resize(640, 480);
+    view.setStyleSheet("background: yellow");
     view.show();
     QPoint center(view.size().width() / 2, view.size().height() / 2);
 
@@ -4401,6 +4579,11 @@ void tst_QWebEnginePage::backgroundColor()
 
     QCOMPARE(page->backgroundColor(), Qt::red);
     QCOMPARE(view.grab().toImage().pixelColor(center), Qt::red);
+
+    page->setBackgroundColor(Qt::transparent);
+
+    QCOMPARE(page->backgroundColor(), Qt::transparent);
+    QTRY_COMPARE(view.grab().toImage().pixelColor(center), Qt::yellow);
 
     page->setBackgroundColor(Qt::green);
 

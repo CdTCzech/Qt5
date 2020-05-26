@@ -60,6 +60,7 @@
 #include "qmath.h"
 #include "qnumeric.h"
 #include <qregularexpression.h>
+#include "qtransform.h"
 #include "qvarlengtharray.h"
 #include "private/qmath_p.h"
 
@@ -1068,12 +1069,12 @@ static void parseBrush(QSvgNode *node,
 
 
 
-static QMatrix parseTransformationMatrix(const QStringRef &value)
+static QTransform parseTransformationMatrix(const QStringRef &value)
 {
     if (value.isEmpty())
-        return QMatrix();
+        return QTransform();
 
-    QMatrix matrix;
+    QTransform matrix;
     const QChar *str = value.constData();
     const QChar *end = str + value.length();
 
@@ -1156,9 +1157,9 @@ static QMatrix parseTransformationMatrix(const QStringRef &value)
         if(state == Matrix) {
             if(points.count() != 6)
                 goto error;
-            matrix = QMatrix(points[0], points[1],
-                             points[2], points[3],
-                             points[4], points[5]) * matrix;
+            matrix = QTransform(points[0], points[1],
+                                points[2], points[3],
+                                points[4], points[5]) * matrix;
         } else if (state == Translate) {
             if (points.count() == 1)
                 matrix.translate(points[0], 0);
@@ -1438,7 +1439,7 @@ static void parseTransform(QSvgNode *node,
 {
     if (attributes.transform.isEmpty())
         return;
-    QMatrix matrix = parseTransformationMatrix(trimRef(attributes.transform));
+    QTransform matrix = parseTransformationMatrix(trimRef(attributes.transform));
 
     if (!matrix.isIdentity()) {
         node->appendStyleProperty(new QSvgTransformStyle(QTransform(matrix)), attributes.id);
@@ -2078,7 +2079,7 @@ static void cssStyleLookup(QSvgNode *node,
 
 static inline QStringList stringToList(const QString &str)
 {
-    QStringList lst = str.split(QLatin1Char(','), QString::SkipEmptyParts);
+    QStringList lst = str.split(QLatin1Char(','), Qt::SkipEmptyParts);
     return lst;
 }
 
@@ -2849,7 +2850,7 @@ static void parseBaseGradient(QSvgNode *node,
         handler->pushColor(color);
     }
 
-    QMatrix matrix;
+    QTransform matrix;
     QGradient *grad = gradProp->qgradient();
     if (!link.isEmpty()) {
         QSvgStyleProperty *prop = node->styleProperty(link);
@@ -2864,7 +2865,7 @@ static void parseBaseGradient(QSvgNode *node,
                 gradProp->setGradientStopsSet(inherited->gradientStopsSet());
             }
 
-            matrix = inherited->qmatrix();
+            matrix = inherited->qtransform();
         } else {
             gradProp->setStopLink(link, handler->document());
         }
@@ -2872,9 +2873,9 @@ static void parseBaseGradient(QSvgNode *node,
 
     if (!trans.isEmpty()) {
         matrix = parseTransformationMatrix(trans);
-        gradProp->setMatrix(matrix);
+        gradProp->setTransform(matrix);
     } else if (!matrix.isIdentity()) {
-        gradProp->setMatrix(matrix);
+        gradProp->setTransform(matrix);
     }
 
     if (!spread.isEmpty()) {
@@ -3267,7 +3268,7 @@ static QSvgNode *createSvgNode(QSvgNode *parent,
         viewBoxStr = viewBoxStr.replace(QLatin1Char('\r'), QLatin1Char(','));
         viewBoxStr = viewBoxStr.replace(QLatin1Char('\n'), QLatin1Char(','));
         viewBoxStr = viewBoxStr.replace(QLatin1Char('\t'), QLatin1Char(','));
-        viewBoxValues = viewBoxStr.split(QLatin1Char(','), QString::SkipEmptyParts);
+        viewBoxValues = viewBoxStr.split(QLatin1Char(','), Qt::SkipEmptyParts);
     }
     if (viewBoxValues.count() == 4) {
         QString xStr      = viewBoxValues.at(0).trimmed();

@@ -38,6 +38,7 @@
 ****************************************************************************/
 
 #include "qmediaplayer.h"
+#include "qvideosurfaces_p.h"
 #include "qvideosurfaceoutput_p.h"
 
 #include "qmediaobject_p.h"
@@ -563,7 +564,7 @@ static QMediaService *playerService(QMediaPlayer::Flags flags)
 {
     QMediaServiceProvider *provider = QMediaServiceProvider::defaultServiceProvider();
     if (flags) {
-        QMediaServiceProviderHint::Features features = 0;
+        QMediaServiceProviderHint::Features features;
         if (flags & QMediaPlayer::LowLatency)
             features |= QMediaServiceProviderHint::LowLatencyPlayback;
 
@@ -730,7 +731,11 @@ void QMediaPlayer::setPlaylist(QMediaPlaylist *playlist)
     setMedia(m);
 }
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
+    \obsolete
+
     Sets the network access points for remote media playback.
     \a configurations contains, in ascending preferential order, a list of
     configuration  that can be used for network access.
@@ -744,6 +749,7 @@ void QMediaPlayer::setNetworkConfigurations(const QList<QNetworkConfiguration> &
     if (d->networkAccessControl)
         d->networkAccessControl->setConfigurations(configurations);
 }
+QT_WARNING_POP
 
 QMediaPlayer::State QMediaPlayer::state() const
 {
@@ -869,7 +875,11 @@ QString QMediaPlayer::errorString() const
     return d_func()->errorString;
 }
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
+    \obsolete
+
     Returns the current network access point  in use.
     If a default contructed QNetworkConfiguration is returned
     this feature is not available or that none of the
@@ -884,6 +894,8 @@ QNetworkConfiguration QMediaPlayer::currentNetworkConfiguration() const
 
     return QNetworkConfiguration();
 }
+QT_WARNING_POP
+
 
 //public Q_SLOTS:
 /*!
@@ -1005,8 +1017,9 @@ void QMediaPlayer::setPlaybackRate(qreal rate)
     Sets the current \a media source.
 
     If a \a stream is supplied; media data will be read from it instead of resolving the media
-    source. In this case the media source may still be used to resolve additional information
+    source. In this case the url should be provided to resolve additional information
     about the media such as mime type. The \a stream must be open and readable.
+    For macOS the \a stream should be also seekable.
 
     Setting the media to a null QMediaContent will cause the player to discard all
     information relating to the current media source and to cease all I/O operations related
@@ -1183,6 +1196,24 @@ void QMediaPlayer::setVideoOutput(QAbstractVideoSurface *surface)
         unbind(&d->surfaceOutput);
         d->videoOutput = nullptr;
     }
+}
+
+/*!
+    \since 5.15
+    Sets multiple video surfaces as the video output of a media player.
+    This allows the media player to render video frames on different surfaces.
+
+    All video surfaces must support at least one shared \c QVideoFrame::PixelFormat.
+
+    If a video output has already been set on the media player the new surfaces
+    will replace it.
+
+    \sa QAbstractVideoSurface::supportedPixelFormats
+*/
+
+void QMediaPlayer::setVideoOutput(const QVector<QAbstractVideoSurface *> &surfaces)
+{
+    setVideoOutput(!surfaces.empty() ? new QVideoSurfaces(surfaces, this) : nullptr);
 }
 
 /*! \reimp */
@@ -1559,7 +1590,7 @@ QStringList QMediaPlayer::supportedCustomAudioRoles() const
     This value is a multiplier applied to the media's standard play rate. By
     default this value is 1.0, indicating that the media is playing at the
     standard pace. Values higher than 1.0 will increase the rate of play.
-    Values less than zero can be set and indicate the media will rewind at the
+    Values less than zero can be set and indicate the media should rewind at the
     multiplier of the standard pace.
 
     Not all playback services support change of the playback rate. It is
@@ -1644,6 +1675,7 @@ QStringList QMediaPlayer::supportedCustomAudioRoles() const
 
 /*!
    \fn void QMediaPlayer::networkConfigurationChanged(const QNetworkConfiguration &configuration)
+   \obsolete
 
     Signal that the active in use network access point  has been changed to \a configuration and all subsequent network access will use this \a configuration.
 */

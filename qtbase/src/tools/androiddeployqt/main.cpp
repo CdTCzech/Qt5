@@ -169,6 +169,8 @@ struct Options
     // Versioning
     QString versionName;
     QString versionCode;
+    QByteArray minSdkVersion{"21"};
+    QByteArray targetSdkVersion{"28"};
 
     // lib c++ path
     QString stdCppPath;
@@ -850,6 +852,18 @@ bool readInputFile(Options *options)
     }
 
     {
+        const QJsonValue ver = jsonObject.value(QLatin1String("android-min-sdk-version"));
+        if (!ver.isUndefined())
+            options->minSdkVersion = ver.toString().toUtf8();
+    }
+
+    {
+        const QJsonValue ver = jsonObject.value(QLatin1String("android-target-sdk-version"));
+        if (!ver.isUndefined())
+            options->targetSdkVersion = ver.toString().toUtf8();
+    }
+
+    {
         const QJsonObject targetArchitectures = jsonObject.value(QLatin1String("architectures")).toObject();
         if (targetArchitectures.isEmpty()) {
             fprintf(stderr, "No target architecture defined in json file.\n");
@@ -896,7 +910,7 @@ bool readInputFile(Options *options)
     {
         const QJsonValue extraLibs = jsonObject.value(QLatin1String("android-extra-libs"));
         if (!extraLibs.isUndefined())
-            options->extraLibs = extraLibs.toString().split(QLatin1Char(','), QString::SkipEmptyParts);
+            options->extraLibs = extraLibs.toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
     }
 
     {
@@ -980,7 +994,7 @@ bool readInputFile(Options *options)
     }
     {
         const QJsonValue qrcFiles = jsonObject.value(QLatin1String("qrcFiles"));
-        options->qrcFiles = qrcFiles.toString().split(QLatin1Char(','), QString::SkipEmptyParts);
+        options->qrcFiles = qrcFiles.toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
     }
     options->packageName = packageNameFromAndroidManifest(options->androidSourceDirectory + QLatin1String("/AndroidManifest.xml"));
     if (options->packageName.isEmpty())
@@ -2299,6 +2313,8 @@ bool buildAndroidProject(const Options &options)
     gradleProperties["buildDir"] = "build";
     gradleProperties["qt5AndroidDir"] = (options.qtInstallDirectory + QLatin1String("/src/android/java")).toUtf8();
     gradleProperties["androidCompileSdkVersion"] = options.androidPlatform.split(QLatin1Char('-')).last().toLocal8Bit();
+    gradleProperties["qtMinSdkVersion"] = options.minSdkVersion;
+    gradleProperties["qtTargetSdkVersion"] = options.targetSdkVersion;
     if (gradleProperties["androidBuildToolsVersion"].isEmpty())
         gradleProperties["androidBuildToolsVersion"] = options.sdkBuildToolsVersion.toLocal8Bit();
 

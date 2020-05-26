@@ -279,7 +279,26 @@ contains(all_qt_module_deps, qml): \
     for (QMLPATH, QMLPATHS): \
         IMPORTPATHS += -importPath $$system_quote($$QMLPATH)
 
-    #message(run $$QMLIMPORTSCANNER $$_PRO_FILE_PWD_  $$IMPORTPATHS)
+    # add resources to qmlimportscanner
+    for (RESOURCE, RESOURCES) {
+        defined($${RESOURCE}.files, var) {
+            # in case of a "struct", add the struct's files
+            base = $$RESOURCE.base
+            for (f, $$RESOURCE.files): SCANNERRESOURCES += "$$base/$$f"
+        } else {
+            # if the resource is a file, just add it
+            SCANNERRESOURCES += $$RESOURCE
+        }
+    }
+
+    !isEmpty(SCANNERRESOURCES) {
+        IMPORTPATHS += -qrcFiles
+        for (RESOURCE, SCANNERRESOURCES): \
+            IMPORTPATHS += $$absolute_path($$system_quote($$RESOURCE), $$_PRO_FILE_PWD_)
+    }
+
+
+    # message(run $$QMLIMPORTSCANNER $$_PRO_FILE_PWD_  $$IMPORTPATHS)
     JSON = $$system($$QMLIMPORTSCANNER $$system_quote($$_PRO_FILE_PWD_) $$IMPORTPATHS)
 
     parseJson(JSON, IMPORTS)| error("Failed to parse qmlimportscanner output.")

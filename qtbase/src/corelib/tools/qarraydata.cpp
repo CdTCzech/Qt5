@@ -143,7 +143,7 @@ qCalculateGrowingBlockSize(size_t elementCount, size_t elementSize, size_t heade
     }
 
     result.elementCount = (bytes - unsigned(headerSize)) / unsigned(elementSize);
-    result.size = bytes;
+    result.size = result.elementCount * elementSize + headerSize;
     return result;
 }
 
@@ -265,7 +265,7 @@ void QArrayData::deallocate(QArrayData *data, size_t objectSize,
         return;
 #endif
 
-    Q_ASSERT_X(data == 0 || !data->ref.isStatic(), "QArrayData::deallocate",
+    Q_ASSERT_X(data == nullptr || !data->ref.isStatic(), "QArrayData::deallocate",
                "Static data cannot be deleted");
     ::free(data);
 }

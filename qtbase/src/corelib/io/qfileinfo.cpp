@@ -134,7 +134,7 @@ uint QFileInfoPrivate::getFileFlags(QAbstractFileEngine::FileFlags request) cons
     // extra syscall. Bundle detecton on Mac can be slow, expecially on network
     // paths, so we separate out that as well.
 
-    QAbstractFileEngine::FileFlags req = nullptr;
+    QAbstractFileEngine::FileFlags req;
     uint cachedFlags = 0;
 
     if (request & (QAbstractFileEngine::FlagsMask | QAbstractFileEngine::TypesMask)) {
@@ -272,7 +272,7 @@ QDateTime &QFileInfoPrivate::getFileTime(QAbstractFileEngine::FileTime request) 
     info objects, just append one to the file name given to the constructors
     or setFile().
 
-    The file's dates are returned by created(), lastModified(), lastRead() and
+    The file's dates are returned by birthTime(), lastModified(), lastRead() and
     fileTime(). Information about the file's access permissions is
     obtained with isReadable(), isWritable() and isExecutable(). The
     file's ownership is available from owner(), ownerId(), group() and
@@ -1142,6 +1142,27 @@ bool QFileInfo::isShortcut() const
     return d->checkAttribute<bool>(
             QFileSystemMetaData::LegacyLinkType,
             [d]() { return d->metaData.isLnkFile(); },
+            [d]() { return d->getFileFlags(QAbstractFileEngine::LinkType); });
+}
+
+
+/*!
+    \since 5.15
+
+    Returns \c true if the object points to a junction;
+    otherwise returns \c false.
+
+    Junctions only exist on Windows' NTFS file system, and are typically
+    created by the \c{mklink} command. They can be thought of as symlinks for
+    directories, and can only be created for absolute paths on the local
+    volume.
+*/
+bool QFileInfo::isJunction() const
+{
+    Q_D(const QFileInfo);
+    return d->checkAttribute<bool>(
+            QFileSystemMetaData::LegacyLinkType,
+            [d]() { return d->metaData.isJunction(); },
             [d]() { return d->getFileFlags(QAbstractFileEngine::LinkType); });
 }
 

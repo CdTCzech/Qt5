@@ -512,7 +512,7 @@ static inline bool runSysApp(const QString &binary,
     errorMessage->clear();
     QProcess process;
     process.setEnvironment(env);
-    process.start(binary);
+    process.start(binary, QStringList());
     process.closeWriteChannel();
     if (!process.waitForStarted()) {
         *errorMessage = QLatin1String("Cannot start '") + binary
@@ -1342,7 +1342,7 @@ void tst_QLocale::long_long_conversion()
 void tst_QLocale::long_long_conversion_extra()
 {
     QLocale l(QLocale::C);
-    l.setNumberOptions(0);
+    l.setNumberOptions({ });
     QCOMPARE(l.toString((qlonglong)1), QString("1"));
     QCOMPARE(l.toString((qlonglong)12), QString("12"));
     QCOMPARE(l.toString((qlonglong)123), QString("123"));
@@ -1395,6 +1395,7 @@ void tst_QLocale::fpExceptions()
     // check that double-to-string conversion doesn't throw floating point exceptions when they are
     // enabled
 #ifdef Q_OS_WIN
+    _clear87();
     unsigned int oldbits = _control87(0, 0);
     _control87( 0 | _EM_INEXACT, _MCW_EM );
 #endif
@@ -2042,6 +2043,8 @@ void tst_QLocale::windowsDefaultLocale()
     setWinLocaleInfo(LOCALE_SLONGDATE, longDateFormat);
     const QString shortTimeFormat = QStringLiteral("h^m^s");
     setWinLocaleInfo(LOCALE_SSHORTTIME, shortTimeFormat);
+    const QString longTimeFormat = QStringLiteral("HH%mm%ss");
+    setWinLocaleInfo(LOCALE_STIMEFORMAT, longTimeFormat);
 
     QSystemLocale dummy; // to provoke a refresh of the system locale
     QLocale locale = QLocale::system();
@@ -2055,7 +2058,7 @@ void tst_QLocale::windowsDefaultLocale()
     QCOMPARE(locale.dateTimeFormat(QLocale::ShortFormat),
              shortDateFormat + QLatin1Char(' ') + shortTimeFormat);
     const QString expectedLongDateTimeFormat
-        = longDateFormat + QLatin1Char(' ') + QStringLiteral("h:mm:ss AP");
+        = longDateFormat + QLatin1Char(' ') + longTimeFormat;
     QCOMPARE(locale.dateTimeFormat(QLocale::LongFormat), expectedLongDateTimeFormat);
 
     // make sure we are using the system to parse them
@@ -2069,7 +2072,7 @@ void tst_QLocale::windowsDefaultLocale()
     QCOMPARE(locale.toString(QTime(1,2,3), QLocale::ShortFormat), expectedFormattedShortTime);
     QCOMPARE(locale.toString(QTime(1,2,3), QLocale::NarrowFormat),
              locale.toString(QTime(1,2,3), QLocale::ShortFormat));
-    const QString expectedFormattedLongTime = QStringLiteral("1:02:03 AM");
+    const QString expectedFormattedLongTime = QStringLiteral("01%02%03");
     QCOMPARE(locale.toString(QTime(1,2,3), QLocale::LongFormat), expectedFormattedLongTime);
     QCOMPARE(locale.toString(QDateTime(QDate(1974, 12, 1), QTime(1,2,3)), QLocale::ShortFormat),
              QStringLiteral("1*12*1974 ") + expectedFormattedShortTime);
@@ -2077,7 +2080,6 @@ void tst_QLocale::windowsDefaultLocale()
              locale.toString(QDateTime(QDate(1974, 12, 1), QTime(1,2,3)), QLocale::ShortFormat));
     QCOMPARE(locale.toString(QDateTime(QDate(1974, 12, 1), QTime(1,2,3)), QLocale::LongFormat),
              QStringLiteral("1@12@1974 ") + expectedFormattedLongTime);
-    QCOMPARE(locale.toString(QTime(1,2,3), QLocale::LongFormat), expectedFormattedLongTime);
 }
 #endif // Q_OS_WIN but !Q_OS_WINRT
 
@@ -2093,7 +2095,7 @@ void tst_QLocale::numberOptions()
     QVERIFY(ok);
     QCOMPARE(locale.toString(12345), QString("12345"));
 
-    locale.setNumberOptions(0);
+    locale.setNumberOptions({ });
     QCOMPARE(locale.numberOptions(), 0);
     QCOMPARE(locale.toInt(QString("12,345"), &ok), 12345);
     QVERIFY(ok);
@@ -2567,12 +2569,12 @@ void tst_QLocale::currency()
 
     const QLocale en_US("en_US");
     QCOMPARE(en_US.toCurrencyString(qulonglong(1234)), QString("$1,234"));
-    QCOMPARE(en_US.toCurrencyString(qlonglong(-1234)), QString("$-1,234"));
+    QCOMPARE(en_US.toCurrencyString(qlonglong(-1234)), QString("($1,234)"));
     QCOMPARE(en_US.toCurrencyString(double(1234.56)), QString("$1,234.56"));
-    QCOMPARE(en_US.toCurrencyString(double(-1234.56)), QString("$-1,234.56"));
-    QCOMPARE(en_US.toCurrencyString(double(-1234.5678)), QString("$-1,234.57"));
-    QCOMPARE(en_US.toCurrencyString(double(-1234.5678), NULL, 4), QString("$-1,234.5678"));
-    QCOMPARE(en_US.toCurrencyString(double(-1234.56), NULL, 4), QString("$-1,234.5600"));
+    QCOMPARE(en_US.toCurrencyString(double(-1234.56)), QString("($1,234.56)"));
+    QCOMPARE(en_US.toCurrencyString(double(-1234.5678)), QString("($1,234.57)"));
+    QCOMPARE(en_US.toCurrencyString(double(-1234.5678), NULL, 4), QString("($1,234.5678)"));
+    QCOMPARE(en_US.toCurrencyString(double(-1234.56), NULL, 4), QString("($1,234.5600)"));
 
     const QLocale ru_RU("ru_RU");
     QCOMPARE(ru_RU.toCurrencyString(qulonglong(1234)),

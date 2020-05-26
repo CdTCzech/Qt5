@@ -1681,7 +1681,7 @@ QTextCursor QTextDocument::find(const QRegularExpression &expr, const QTextCurso
 */
 QTextObject *QTextDocument::createObject(const QTextFormat &f)
 {
-    QTextObject *obj = 0;
+    QTextObject *obj = nullptr;
     if (f.isListFormat())
         obj = new QTextList(this);
     else if (f.isTableFormat())
@@ -2237,7 +2237,7 @@ QVariant QTextDocument::loadResource(int type, const QUrl &name)
     }
 
     if (!r.isNull()) {
-        if (type == ImageResource && r.type() == QVariant::ByteArray) {
+        if (type == ImageResource && r.userType() == QMetaType::QByteArray) {
             if (qApp->thread() != QThread::currentThread()) {
                 // must use images in non-GUI threads
                 QImage image;
@@ -2424,7 +2424,7 @@ bool QTextHtmlExporter::emitCharFormatStyle(const QTextCharFormat &format)
             sizeof("small") + sizeof("medium") + 1,    // "x-large"  )> compressed into "xx-large"
             sizeof("small") + sizeof("medium"),        // "xx-large" )
         };
-        const char *name = 0;
+        const char *name = nullptr;
         const int idx = format.intProperty(QTextFormat::FontSizeAdjustment) + 1;
         if (idx >= 0 && idx <= 4) {
             name = sizeNameData + sizeNameOffsets[idx];
@@ -3052,12 +3052,12 @@ QString QTextHtmlExporter::findUrlForImage(const QTextDocument *doc, qint64 cach
         for (; it != priv->cachedResources.constEnd(); ++it) {
 
             const QVariant &v = it.value();
-            if (v.type() == QVariant::Image && !isPixmap) {
+            if (v.userType() == QMetaType::QImage && !isPixmap) {
                 if (qvariant_cast<QImage>(v).cacheKey() == cacheKey)
                     break;
             }
 
-            if (v.type() == QVariant::Pixmap && isPixmap) {
+            if (v.userType() == QMetaType::QPixmap && isPixmap) {
                 if (qvariant_cast<QPixmap>(v).cacheKey() == cacheKey)
                     break;
             }
@@ -3075,7 +3075,7 @@ void QTextDocumentPrivate::mergeCachedResources(const QTextDocumentPrivate *priv
     if (!priv)
         return;
 
-    cachedResources.unite(priv->cachedResources);
+    cachedResources.insert(priv->cachedResources);
 }
 
 void QTextHtmlExporter::emitBackgroundAttribute(const QTextFormat &format)
@@ -3258,7 +3258,7 @@ void QTextHtmlExporter::emitFrame(const QTextFrame::Iterator &frameIt)
         QTextFrame::Iterator next = frameIt;
         ++next;
         if (next.atEnd()
-            && frameIt.currentFrame() == 0
+            && frameIt.currentFrame() == nullptr
             && frameIt.parentFrame() != doc->rootFrame()
             && frameIt.currentBlock().begin().atEnd())
             return;

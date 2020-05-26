@@ -254,6 +254,23 @@ QSSGRenderVertFragCompilationResult QSSGRenderContext::compileBinary(const char 
 #endif
 }
 
+QSSGRenderVertFragCompilationResult QSSGRenderContext::compileBinary(const char *shaderName,
+                                                                     quint32 format,
+                                                                     const QByteArray &binary)
+{
+#ifndef _MACOSX
+    QSSGRenderVertFragCompilationResult result = QSSGRenderShaderProgram::create(this,
+                                                                                 shaderName,
+                                                                                 format,
+                                                                                 binary);
+
+    return result;
+#else
+    Q_ASSERT(false);
+    return QSSGRenderVertFragCompilationResult();
+#endif
+}
+
 QSSGRenderVertFragCompilationResult QSSGRenderContext::compileComputeSource(const QByteArray &shaderName,
                                                                                 QSSGByteView computeShaderSource)
 {
@@ -299,6 +316,16 @@ void QSSGRenderContext::setBlendEquation(QSSGRenderBlendEquationArgument inEquat
 
     m_hardwarePropertyContext.m_blendEquation = inEquations;
     m_backend->setBlendEquation(inEquations);
+}
+
+void QSSGRenderContext::resetBlendEquation(bool forceSet)
+{
+    const QSSGRenderBlendEquationArgument defaultBlendEqua;
+    if (!forceSet && m_hardwarePropertyContext.m_blendEquation == defaultBlendEqua)
+        return;
+
+    m_hardwarePropertyContext.m_blendEquation = defaultBlendEqua;
+    m_backend->setBlendEquation(defaultBlendEqua);
 }
 
 void QSSGRenderContext::setCullingEnabled(bool inEnabled, bool forceSet)
@@ -571,7 +598,7 @@ void QSSGRenderContext::popPropertySet(bool inForceSetProperties)
 
 void QSSGRenderContext::clear(QSSGRenderClearFlags flags)
 {
-    if ((flags & QSSGRenderClearValues::Depth) && m_hardwarePropertyContext.m_depthWriteEnabled == false) {
+    if (Q_UNLIKELY((flags & QSSGRenderClearValues::Depth) && !m_hardwarePropertyContext.m_depthWriteEnabled)) {
         Q_ASSERT(false);
         setDepthWriteEnabled(true);
     }
@@ -617,6 +644,13 @@ void QSSGRenderContext::copyFramebufferTexture(qint32 srcX0,
                                       QSSGRenderTextureTargetType::Texture2D);
 }
 
+void QSSGRenderContext::releaseResources()
+{
+    m_hardwarePropertyContext = QSSGGLHardPropertyContext();
+    m_constantToImpMap.clear();
+    m_storageToImpMap.clear();
+}
+
 bool QSSGRenderContext::bindShaderToInputAssembler(const QSSGRef<QSSGRenderInputAssembler> &inputAssembler,
                                                      const QSSGRef<QSSGRenderShaderProgram> &shader)
 {
@@ -645,6 +679,9 @@ bool QSSGRenderContext::applyPreDrawProperties()
 
 void QSSGRenderContext::onPostDraw()
 {
+    // Reset to default blend equation if needed
+    resetBlendEquation();
+
     // reset input assembler binding
     m_backend->setInputAssembler(nullptr, nullptr);
     // Texture unit 0 is used for setting up and loading textures.

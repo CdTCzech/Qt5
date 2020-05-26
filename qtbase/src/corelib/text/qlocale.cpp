@@ -79,7 +79,7 @@
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_SYSTEMLOCALE
-static QSystemLocale *_systemLocale = 0;
+static QSystemLocale *_systemLocale = nullptr;
 class QSystemLocaleSingleton: public QSystemLocale
 {
 public:
@@ -699,7 +699,7 @@ QSystemLocale::QSystemLocale(bool)
 QSystemLocale::~QSystemLocale()
 {
     if (_systemLocale == this) {
-        _systemLocale = 0;
+        _systemLocale = nullptr;
 
         globalLocaleData.m_language_id = 0;
     }
@@ -763,8 +763,6 @@ static void updateSystemPrivate()
         const ushort group = res.toString().at(0).unicode();
         if (group != globalLocaleData.m_decimal)
             globalLocaleData.m_group = group;
-        else if (group == globalLocaleData.m_group)
-            qWarning("System-supplied decimal and grouping character are both 0x%hx", group);
     }
 
     res = sys_locale->query(QSystemLocale::ZeroDigit, QVariant());
@@ -2053,6 +2051,9 @@ QString QLocale::toString(const QDate &date, QStringView format) const
 /*!
     Returns a localized string representation of the given \a date according
     to the specified \a format.
+
+    \note Some locales may use formats that limit the range of years they can
+    represent.
 */
 
 QString QLocale::toString(const QDate &date, FormatType format) const
@@ -2207,6 +2208,9 @@ QString QLocale::toString(const QDateTime &dateTime, QStringView format, QCalend
 
     Returns a localized string representation of the given \a dateTime according
     to the specified \a format.
+
+    \note Some locales may use formats that limit the range of years they can
+    represent.
 */
 
 QString QLocale::toString(const QDateTime &dateTime, FormatType format) const
@@ -2375,14 +2379,19 @@ QTime QLocale::toTime(const QString &string, FormatType format) const
     return toTime(string, timeFormat(format));
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
     \since 5.14
     \overload
+    \deprecated
 */
 QTime QLocale::toTime(const QString &string, FormatType format, QCalendar cal) const
 {
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
     return toTime(string, timeFormat(format), cal);
+QT_WARNING_POP
 }
+#endif
 
 /*!
     \since 4.4
@@ -2447,21 +2456,33 @@ QDateTime QLocale::toDateTime(const QString &string, FormatType format, QCalenda
 */
 QTime QLocale::toTime(const QString &string, const QString &format) const
 {
-    return toTime(string, format, QCalendar());
+    QTime time;
+#if QT_CONFIG(datetimeparser)
+    QDateTimeParser dt(QMetaType::QTime, QDateTimeParser::FromString, QCalendar());
+    dt.setDefaultLocale(*this);
+    if (dt.parseFormat(format))
+        dt.fromString(string, nullptr, &time);
+#else
+    Q_UNUSED(string);
+    Q_UNUSED(format);
+#endif
+    return time;
 }
 
+#if QT_DEPRECATED_SINCE(5, 15)
 /*!
     \since 5.14
     \overload
+    \deprecated
 */
 QTime QLocale::toTime(const QString &string, const QString &format, QCalendar cal) const
 {
     QTime time;
 #if QT_CONFIG(datetimeparser)
-    QDateTimeParser dt(QVariant::Time, QDateTimeParser::FromString, cal);
+    QDateTimeParser dt(QMetaType::QTime, QDateTimeParser::FromString, cal);
     dt.setDefaultLocale(*this);
     if (dt.parseFormat(format))
-        dt.fromString(string, 0, &time);
+        dt.fromString(string, nullptr, &time);
 #else
     Q_UNUSED(cal);
     Q_UNUSED(string);
@@ -2469,6 +2490,7 @@ QTime QLocale::toTime(const QString &string, const QString &format, QCalendar ca
 #endif
     return time;
 }
+#endif
 
 /*!
     \since 4.4
@@ -2497,10 +2519,10 @@ QDate QLocale::toDate(const QString &string, const QString &format, QCalendar ca
 {
     QDate date;
 #if QT_CONFIG(datetimeparser)
-    QDateTimeParser dt(QVariant::Date, QDateTimeParser::FromString, cal);
+    QDateTimeParser dt(QMetaType::QDate, QDateTimeParser::FromString, cal);
     dt.setDefaultLocale(*this);
     if (dt.parseFormat(format))
-        dt.fromString(string, &date, 0);
+        dt.fromString(string, &date, nullptr);
 #else
     Q_UNUSED(string);
     Q_UNUSED(format);
@@ -2535,19 +2557,18 @@ QDateTime QLocale::toDateTime(const QString &string, const QString &format) cons
 QDateTime QLocale::toDateTime(const QString &string, const QString &format, QCalendar cal) const
 {
 #if QT_CONFIG(datetimeparser)
-    QTime time;
-    QDate date;
+    QDateTime datetime;
 
-    QDateTimeParser dt(QVariant::DateTime, QDateTimeParser::FromString, cal);
+    QDateTimeParser dt(QMetaType::QDateTime, QDateTimeParser::FromString, cal);
     dt.setDefaultLocale(*this);
-    if (dt.parseFormat(format) && dt.fromString(string, &date, &time))
-        return QDateTime(date, time);
+    if (dt.parseFormat(format) && dt.fromString(string, &datetime))
+        return datetime;
 #else
     Q_UNUSED(string);
     Q_UNUSED(format);
     Q_UNUSED(cal);
 #endif
-    return QDateTime(QDate(), QTime(-1, -1, -1));
+    return QDateTime();
 }
 #endif // datestring
 
@@ -3140,7 +3161,7 @@ QList<Qt::DayOfWeek> QLocale::weekdays() const
     if (d->m_data == systemData()) {
         QVariant res = systemLocale()->query(QSystemLocale::Weekdays, QVariant());
         if (!res.isNull())
-            return static_cast<QList<Qt::DayOfWeek> >(res.value<QList<Qt::DayOfWeek> >());
+            return static_cast<QList<Qt::DayOfWeek> >(qvariant_cast<QList<Qt::DayOfWeek> >(res));
     }
 #endif
     QList<Qt::DayOfWeek> weekdays;

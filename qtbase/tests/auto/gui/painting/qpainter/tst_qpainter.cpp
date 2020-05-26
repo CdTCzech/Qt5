@@ -46,6 +46,7 @@
 
 #include <private/qdrawhelper_p.h>
 #include <qpainter.h>
+#include <qpainterpath.h>
 #include <qqueue.h>
 #include <qscreen.h>
 
@@ -715,7 +716,7 @@ void tst_QPainter::drawBorderPixmap()
     QPainter p(&pm);
     p.setTransform(QTransform(-1,0,0,-1,173.5,153.5));
     qDrawBorderPixmap(&p, QRect(0,0,75,105), QMargins(39,39,39,39), src, QRect(0,0,79,79), QMargins(39,39,39,39),
-                       QTileRules(Qt::StretchTile,Qt::StretchTile), 0);
+                       QTileRules(Qt::StretchTile,Qt::StretchTile), { });
 }
 #endif
 
@@ -1704,8 +1705,11 @@ void tst_QPainter::combinedMatrix()
 
     QTransform ct = p.combinedTransform();
 #if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QMatrix cm = p.combinedMatrix();
     QCOMPARE(cm, ct.toAffine());
+QT_WARNING_POP
 #endif
 
     QPointF pt = QPointF(0, 0) * ct.toAffine();
@@ -1739,7 +1743,7 @@ void tst_QPainter::renderHints()
 
     // Turn off all...
     p.setRenderHints(QPainter::RenderHints(0xffffffff), false);
-    QCOMPARE(p.renderHints(), QPainter::RenderHints(0));
+    QCOMPARE(p.renderHints(), QPainter::RenderHints{});
 
     // Single set/get
     p.setRenderHint(QPainter::Antialiasing);
@@ -2245,7 +2249,7 @@ void tst_QPainter::clippedPolygon()
 {
     QFETCH(QSize, imageSize);
     QFETCH(QPainterPath, path);
-    QPolygonF polygon = path.toFillPolygon();
+    QPolygonF polygon = path.toFillPolygon(QTransform());
     QFETCH(QRect, clipRect);
     QPainterPath clipPath;
     clipPath.addRect(clipRect);
@@ -3066,7 +3070,7 @@ void tst_QPainter::fpe_steepSlopes_data()
         const qreal dsin = 0.000014946676875461832484392500630665523431162000633776187896728515625;
         const qreal dcos = 0.9999999998882984630910186751862056553363800048828125;
 
-        const QTransform transform = QTransform(QMatrix(dcos, dsin, -dsin, dcos, 64, 64));
+        const QTransform transform = QTransform(dcos, dsin, -dsin, dcos, 64, 64);
         const QLineF line(2, 2, 2, 6);
 
         QTest::newRow("task 207147 aa") << transform << line << true;
@@ -4064,7 +4068,7 @@ void tst_QPainter::drawPolygon()
     path.moveTo(2, 34);
     path.lineTo(34, 2);
 
-    QPolygonF poly = stroker.createStroke(path).toFillPolygon();
+    QPolygonF poly = stroker.createStroke(path).toFillPolygon(QTransform());
 
     img.fill(0xffffffff);
     QPainter p(&img);
@@ -4133,7 +4137,10 @@ void tst_QPainter::inactivePainter()
     p.setClipping(true);
 
 #if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.combinedMatrix();
+QT_WARNING_POP
 #endif
     p.combinedTransform();
 
@@ -4142,7 +4149,10 @@ void tst_QPainter::inactivePainter()
 
     p.device();
 #if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.deviceMatrix();
+QT_WARNING_POP
 #endif
     p.deviceTransform();
 
@@ -4168,7 +4178,10 @@ void tst_QPainter::inactivePainter()
     p.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform, false);
 
 #if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.resetMatrix();
+QT_WARNING_POP
 #endif
     p.resetTransform();
     p.rotate(1);
@@ -4186,8 +4199,11 @@ void tst_QPainter::inactivePainter()
     p.setWindow(QRect(10, 10, 620, 460));
 
 #if QT_DEPRECATED_SINCE(5, 13)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     p.worldMatrix();
     p.setWorldMatrix(QMatrix().translate(43, 21), true);
+QT_WARNING_POP
 #endif
     p.setWorldMatrixEnabled(true);
 

@@ -446,7 +446,7 @@ void QSSGCustomMaterialVertexPipeline::doGenerateWorldNormal()
     vertexGenerator.addIncoming("attr_norm", "vec3");
     vertexGenerator.addUniform("normalMatrix", "mat3");
 
-    if (hasTessellation() == false) {
+    if (!hasTessellation()) {
         vertex().append("\tvarNormal = normalize( normalMatrix * attr_norm );");
     }
 }
@@ -871,8 +871,12 @@ QSSGMaterialOrComputeShader QSSGMaterialSystem::bindShader(QSSGCustomMaterialRen
     auto theInsertResult = shaderMap.find(skey);
     // QPair<TShaderMap::iterator, bool> theInsertResult(m_ShaderMap.insert(skey, QSSGRef<SCustomMaterialShader>(nullptr)));
 
+    QSSGShaderPreprocessorFeature noFragOutputFeature("NO_FRAG_OUTPUT", true);
+    ShaderFeatureSetList features(inFeatureSet);
+    features.push_back(noFragOutputFeature);
+
     if (theInsertResult == shaderMap.end()) {
-        theProgram = getShader(inRenderContext, inMaterial, inCommand, inFeatureSet, theFlags);
+        theProgram = getShader(inRenderContext, inMaterial, inCommand, features, theFlags);
 
         if (theProgram) {
             theInsertResult = shaderMap.insert(skey,
@@ -1063,6 +1067,12 @@ void QSSGMaterialSystem::applyBlending(const dynamic::QSSGApplyBlending &inComma
     theContext->setBlendEquation(blendEqu);
 }
 
+void QSSGMaterialSystem::applyCullMode(const dynamic::QSSGApplyCullMode &inCommand)
+{
+    const QSSGRef<QSSGRenderContext> &theContext(context->renderContext());
+    theContext->setCullFaceMode(inCommand.m_cullMode);
+}
+
 void QSSGMaterialSystem::applyRenderStateValue(const dynamic::QSSGApplyRenderState &inCommand)
 {
     const QSSGRef<QSSGRenderContext> &theContext(context->renderContext());
@@ -1087,7 +1097,8 @@ void QSSGMaterialSystem::applyRenderStateValue(const dynamic::QSSGApplyRenderSta
         theContext->setMultisampleEnabled(inCommand.m_enabled);
         break;
     case QSSGRenderState::CullFace:
-        // CullFace is configured by Model.cullingMode and not by CustomMaterial
+        theContext->setCullingEnabled(inCommand.m_enabled);
+        break;
     case QSSGRenderState::Unknown:
         Q_ASSERT(false);
         break;
@@ -1150,7 +1161,7 @@ void QSSGMaterialSystem::allocateBuffer(const dynamic::QSSGAllocateBuffer &inCom
             return;
         }
     } else {
-        QSSGRef<QSSGRenderContext> theContext = context->renderContext();
+        const QSSGRef<QSSGRenderContext> &theContext = context->renderContext();
         // if we allocate a buffer based on the default target use viewport to get the dimension
         QRect theViewport(theContext->viewport());
         theSourceTextureDetails.height = theViewport.height();
@@ -1371,7 +1382,7 @@ QSSGLayerGlobalRenderProperties QSSGMaterialSystem::getLayerGlobalRenderProperti
                 theLayer.probeFov };
 }
 
-void QSSGMaterialSystem::renderPass(QSSGCustomMaterialRenderContext &inRenderContext, const QSSGRef<QSSGRenderCustomMaterialShader> &inShader, const QSSGRef<QSSGRenderTexture2D> &, const QSSGRef<QSSGRenderFrameBuffer> &inFrameBuffer, bool inRenderTargetNeedsClear, const QSSGRef<QSSGRenderInputAssembler> &inAssembler, quint32 inCount, quint32 inOffset)
+void QSSGMaterialSystem::renderPass(QSSGCustomMaterialRenderContext &inRenderContext, const QSSGRef<QSSGRenderCustomMaterialShader> &inShader, const QSSGRef<QSSGRenderTexture2D> &, const QSSGRef<QSSGRenderFrameBuffer> &inFrameBuffer, bool inRenderTargetNeedsClear, const QSSGRef<QSSGRenderInputAssembler> &inAssembler, quint32 inCount, quint32 inOffset, bool applyCullMode)
 {
     const QSSGRef<QSSGRenderContext> &theContext(context->renderContext());
     theContext->setRenderTarget(inFrameBuffer);
@@ -1439,7 +1450,8 @@ void QSSGMaterialSystem::renderPass(QSSGCustomMaterialRenderContext &inRenderCon
     }
 
     theContext->setInputAssembler(inAssembler);
-    theContext->solveCullingOptions(inRenderContext.material.cullingMode);
+    if (applyCullMode)
+        theContext->solveCullingOptions(inRenderContext.material.cullMode);
 
     quint32 count = inCount;
     quint32 offset = inOffset;
@@ -1472,6 +1484,7 @@ void QSSGMaterialSystem::doRenderCustomMaterial(QSSGCustomMaterialRenderContext 
 
     QVector2D theDestSize;
     bool theRenderTargetNeedsClear = false;
+    bool applyMaterialCullMode = true;
 
     const auto &commands = inMaterial.commands;
     for (const auto &command : commands) {
@@ -1511,13 +1524,19 @@ void QSSGMaterialSystem::doRenderCustomMaterial(QSSGCustomMaterialRenderContext 
                            theRenderTargetNeedsClear,
                            inRenderContext.subset.inputAssembler,
                            inRenderContext.subset.count,
-                           inRenderContext.subset.offset);
+                           inRenderContext.subset.offset,
+                           applyMaterialCullMode);
             }
             // reset
             theRenderTargetNeedsClear = false;
+            applyMaterialCullMode = true;
             break;
         case dynamic::CommandType::ApplyBlending:
             applyBlending(static_cast<const dynamic::QSSGApplyBlending &>(*command));
+            break;
+        case dynamic::CommandType::ApplyCullMode:
+            applyCullMode(static_cast<const dynamic::QSSGApplyCullMode &>(*command));
+            applyMaterialCullMode = false;
             break;
         case dynamic::CommandType::ApplyBufferValue:
             if (theCurrentShader)
@@ -1544,7 +1563,7 @@ void QSSGMaterialSystem::doRenderCustomMaterial(QSSGCustomMaterialRenderContext 
 
     // Release any per-frame buffers
     for (qint32 idx = 0; idx < allocatedBuffers.size(); ++idx) {
-        if (allocatedBuffers[idx].flags.isSceneLifetime() == false) {
+        if (!allocatedBuffers[idx].flags.isSceneLifetime()) {
             releaseBuffer(idx);
             --idx;
         }

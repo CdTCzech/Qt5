@@ -48,6 +48,7 @@
 #include "qbytearray.h"
 #include "qqueue.h"
 #include "qstack.h"
+#include "qtransform.h"
 #include "qdebug.h"
 
 #ifndef QT_NO_COMPRESS
@@ -335,6 +336,11 @@ void QSvgTinyDocument::setHeight(int len, bool percent)
     m_heightPercent = percent;
 }
 
+void QSvgTinyDocument::setPreserveAspectRatio(bool on)
+{
+    m_preserveAspectRatio = on;
+}
+
 void QSvgTinyDocument::setViewBox(const QRectF &rect)
 {
     m_viewBox = rect;
@@ -470,13 +476,13 @@ bool QSvgTinyDocument::elementExists(const QString &id) const
     return (node!=0);
 }
 
-QMatrix QSvgTinyDocument::matrixForElement(const QString &id) const
+QTransform QSvgTinyDocument::transformForElement(const QString &id) const
 {
     QSvgNode *node = scopeNode(id);
 
     if (!node) {
         qCDebug(lcSvgHandler, "Couldn't find node %s. Skipping rendering.", qPrintable(id));
-        return QMatrix();
+        return QTransform();
     }
 
     QTransform t;
@@ -488,7 +494,7 @@ QMatrix QSvgTinyDocument::matrixForElement(const QString &id) const
         node = node->parent();
     }
 
-    return t.toAffine();
+    return t;
 }
 
 int QSvgTinyDocument::currentFrame() const

@@ -70,7 +70,7 @@ src_winmain.depends = sub-corelib  # just for the module .pri file
 
 src_corelib.subdir = $$PWD/corelib
 src_corelib.target = sub-corelib
-src_corelib.depends = src_tools_moc src_tools_rcc src_tools_tracegen
+src_corelib.depends = src_tools_moc src_tools_tracegen
 
 src_xml.subdir = $$PWD/xml
 src_xml.target = sub-xml
@@ -118,7 +118,7 @@ src_angle.target = sub-angle
 
 src_gui.subdir = $$PWD/gui
 src_gui.target = sub-gui
-src_gui.depends = src_corelib
+src_gui.depends = src_corelib src_tools_rcc
 
 src_platformheaders.subdir = $$PWD/platformheaders
 src_platformheaders.target = sub-platformheaders
@@ -172,6 +172,13 @@ qtConfig(network) {
 qtConfig(sql) {
     SUBDIRS += src_sql
     src_plugins.depends += src_sql
+
+    contains(QT_CONFIG, private_tests) {
+        src_sql_doc_snippets.subdir = sql/doc/snippets
+        src_sql_doc_snippets.target = sub-sql-doc-snippets
+        src_sql_doc_snippets.depends = src_sql
+        SUBDIRS += src_sql_doc_snippets
+    }
 }
 qtConfig(xml): SUBDIRS += src_xml
 qtConfig(testlib): SUBDIRS += src_testlib

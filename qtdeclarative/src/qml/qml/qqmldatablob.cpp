@@ -42,8 +42,11 @@
 #include <private/qqmlprofiler_p.h>
 #include <private/qqmltypeloader_p.h>
 #include <private/qqmltypeloaderthread_p.h>
+#include <private/qqmlsourcecoordinate_p.h>
 
 #include <QtQml/qqmlengine.h>
+
+#include <qtqml_tracepoints_p.h>
 
 #ifdef DATABLOB_DEBUG
 #define ASSERT_CALLBACK() do { if (!m_typeLoader || !m_typeLoader->m_thread->isThisThread()) qFatal("QQmlDataBlob: An API call was made outside a callback"); } while (false)
@@ -304,22 +307,19 @@ void QQmlDataBlob::setError(const QList<QQmlError> &errors)
 void QQmlDataBlob::setError(const QQmlJS::DiagnosticMessage &error)
 {
     QQmlError e;
-    e.setColumn(error.column);
-    e.setLine(error.line);
+    e.setColumn(qmlConvertSourceCoordinate<quint32, int>(error.loc.startColumn));
+    e.setLine(qmlConvertSourceCoordinate<quint32, int>(error.loc.startLine));
     e.setDescription(error.message);
     e.setUrl(url());
     setError(e);
 }
 
-void QQmlDataBlob::setError(const QVector<QQmlJS::DiagnosticMessage> &errors)
+void QQmlDataBlob::setError(const QVector<QQmlError> &errors)
 {
     QList<QQmlError> finalErrors;
     finalErrors.reserve(errors.count());
     for (const auto &error : errors) {
-        QQmlError e;
-        e.setColumn(error.column);
-        e.setLine(error.line);
-        e.setDescription(error.message);
+        QQmlError e = error;
         e.setUrl(url());
         finalErrors << e;
     }
@@ -559,6 +559,7 @@ void QQmlDataBlob::notifyAllWaitingOnMe()
 void QQmlDataBlob::notifyComplete(QQmlDataBlob *blob)
 {
     Q_ASSERT(blob->status() == Error || blob->status() == Complete);
+    Q_TRACE_SCOPE(QQmlCompiling, blob->url());
     QQmlCompilingProfiler prof(typeLoader()->profiler(), blob);
 
     m_inCallback = true;

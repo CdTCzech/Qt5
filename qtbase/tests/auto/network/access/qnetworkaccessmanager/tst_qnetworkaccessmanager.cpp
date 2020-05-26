@@ -58,7 +58,7 @@ tst_QNetworkAccessManager::tst_QNetworkAccessManager()
 
 void tst_QNetworkAccessManager::networkAccessible()
 {
-#ifndef QT_NO_BEARERMANAGEMENT
+#ifndef QT_NO_BEARERMANAGEMENT // ### Qt6: Remove section
     QNetworkAccessManager manager;
 
     qRegisterMetaType<QNetworkAccessManager::NetworkAccessibility>("QNetworkAccessManager::NetworkAccessibility");
@@ -87,7 +87,7 @@ void tst_QNetworkAccessManager::networkAccessible()
     // When network is not accessible, all requests fail
     QNetworkReply *reply = manager.get(QNetworkRequest(QUrl("http://www.example.org")));
     QSignalSpy finishedSpy(reply, &QNetworkReply::finished);
-    QSignalSpy errorSpy(reply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::error));
+    QSignalSpy errorSpy(reply, &QNetworkReply::errorOccurred);
     QVERIFY(finishedSpy.wait());
     QCOMPARE(reply->isFinished(), true);
     QCOMPARE(reply->errorString(), QStringLiteral("Network access is disabled."));

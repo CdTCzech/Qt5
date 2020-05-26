@@ -45,14 +45,17 @@
 //  -------------
 //
 // This file is not part of the Qt API.  It provides helper functions
-// for the Cocoa lighthouse plugin. This header file may
+// for the Cocoa plugin. This header file may
 // change from version to version without notice, or even be removed.
 //
 // We mean it.
 //
-#include "qt_mac_p.h"
+
+#include <AppKit/AppKit.h>
+
 #include <private/qguiapplication_p.h>
 #include <QtCore/qoperatingsystemversion.h>
+#include <QtCore/qloggingcategory.h>
 #include <QtGui/qpalette.h>
 #include <QtGui/qscreen.h>
 

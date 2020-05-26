@@ -49,6 +49,8 @@
 #include "qthread_p.h"
 #include "private/qcoreapplication_p.h"
 
+#include <limits>
+
 QT_BEGIN_NAMESPACE
 
 /*
@@ -57,7 +59,7 @@ QT_BEGIN_NAMESPACE
 
 QThreadData::QThreadData(int initialRefCount)
     : _ref(initialRefCount), loopLevel(0), scopeLevel(0),
-      eventDispatcher(0),
+      eventDispatcher(nullptr),
       quitNow(false), canWait(true), isAdopted(false), requiresCoreApplication(true)
 {
     // fprintf(stderr, "QThreadData %p created\n", this);
@@ -65,7 +67,9 @@ QThreadData::QThreadData(int initialRefCount)
 
 QThreadData::~QThreadData()
 {
+#if QT_CONFIG(thread)
     Q_ASSERT(_ref.loadRelaxed() == 0);
+#endif
 
     // In the odd case that Qt is running on a secondary thread, the main
     // thread instance will have been dereffed asunder because of the deref in
@@ -397,7 +401,7 @@ QThreadPrivate::~QThreadPrivate()
 QThread *QThread::currentThread()
 {
     QThreadData *data = QThreadData::current();
-    Q_ASSERT(data != 0);
+    Q_ASSERT(data != nullptr);
     return data->thread.loadAcquire();
 }
 
@@ -449,7 +453,7 @@ QThread::~QThread()
         if (d->running && !d->finished && !d->data->isAdopted)
             qFatal("QThread: Destroyed while thread is still running");
 
-        d->data->thread = 0;
+        d->data->thread = nullptr;
     }
 }
 
@@ -612,7 +616,7 @@ void QThread::run()
     priority.
 
     The \a priority argument can be any value in the \c
-    QThread::Priority enum except for \c InheritPriorty.
+    QThread::Priority enum except for \c InheritPriority.
 
     The effect of the \a priority parameter is dependent on the
     operating system's scheduling policy. In particular, the \a priority
@@ -624,6 +628,10 @@ void QThread::run()
 */
 void QThread::setPriority(Priority priority)
 {
+    if (priority == QThread::InheritPriority) {
+        qWarning("QThread::setPriority: Argument cannot be InheritPriority");
+        return;
+    }
     Q_D(QThread);
     QMutexLocker locker(&d->mutex);
     if (!d->running) {
@@ -726,7 +734,8 @@ QThread::Priority QThread::priority() const
 */
 
 /*!
-    \fn bool QThread::wait(unsigned long time)
+    \fn bool QThread::wait(QDeadlineTimer deadline)
+    \since 5.15
 
     Blocks the thread until either of these conditions is met:
 
@@ -735,11 +744,13 @@ QThread::Priority QThread::priority() const
        execution (i.e. when it returns from \l{run()}). This function
        will return true if the thread has finished. It also returns
        true if the thread has not been started yet.
-    \li \a time milliseconds has elapsed. If \a time is ULONG_MAX (the
-        default), then the wait will never timeout (the thread must
-        return from \l{run()}). This function will return false if the
-        wait timed out.
+    \li The \a deadline is reached. This function will return false if the
+       deadline is reached.
     \endlist
+
+    A deadline timer set to \c QDeadlineTimer::Forever (the default) will never
+    time out: in this case, the function only returns when the thread returns
+    from \l{run()} or if the thread has not yet started.
 
     This provides similar functionality to the POSIX \c
     pthread_join() function.
@@ -833,9 +844,9 @@ void QThread::exit(int returnCode)
     }
 }
 
-bool QThread::wait(unsigned long time)
+bool QThread::wait(QDeadlineTimer deadline)
 {
-    Q_UNUSED(time);
+    Q_UNUSED(deadline);
     return false;
 }
 
@@ -964,6 +975,17 @@ void QThread::setEventDispatcher(QAbstractEventDispatcher *eventDispatcher)
         else
             qWarning("QThread::setEventDispatcher: Could not move event dispatcher to target thread");
     }
+}
+
+/*!
+    \fn bool QThread::wait(unsigned long time)
+    \overload
+*/
+bool QThread::wait(unsigned long time)
+{
+    if (time == std::numeric_limits<unsigned long>::max())
+        return wait(QDeadlineTimer(QDeadlineTimer::Forever));
+    return wait(QDeadlineTimer(time));
 }
 
 #if QT_CONFIG(thread)

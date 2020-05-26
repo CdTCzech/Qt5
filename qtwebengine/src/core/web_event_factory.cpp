@@ -71,6 +71,8 @@
 #include "ui/events/keycodes/dom/keycode_converter.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 
+#include "render_widget_host_view_qt_delegate.h"
+
 #include <QtGui/private/qtgui-config_p.h>
 
 #include <QCoreApplication>
@@ -83,6 +85,8 @@
 #include <QTabletEvent>
 #endif
 #include <QWheelEvent>
+
+namespace QtWebEngineCore {
 
 using namespace blink;
 
@@ -1306,6 +1310,42 @@ static inline WebInputEvent::Modifiers modifiersForEvent(const QInputEvent* even
     return (WebInputEvent::Modifiers)result;
 }
 
+static inline Qt::KeyboardModifiers keyboardModifiersForModifier(unsigned int modifier)
+{
+    Qt::KeyboardModifiers modifiers = {};
+    if (modifier & WebInputEvent::kControlKey)
+        modifiers |= Qt::ControlModifier;
+    if (modifier & WebInputEvent::kMetaKey)
+        modifiers |= Qt::MetaModifier;
+    if (modifier & WebInputEvent::kShiftKey)
+        modifiers |= Qt::ShiftModifier;
+    if (modifier & WebInputEvent::kAltKey)
+        modifiers |= Qt::AltModifier;
+    if (modifier & WebInputEvent::kIsKeyPad)
+        modifiers |= Qt::KeypadModifier;
+
+    if (keyboardDriver() == KeyboardDriver::Cocoa && !qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)) {
+        bool controlModifier = modifiers.testFlag(Qt::ControlModifier);
+        bool metaModifier = modifiers.testFlag(Qt::MetaModifier);
+        modifiers.setFlag(Qt::ControlModifier, metaModifier);
+        modifiers.setFlag(Qt::MetaModifier, controlModifier);
+    }
+
+    return modifiers;
+}
+
+static inline Qt::MouseButtons mouseButtonsForModifier(unsigned int modifier)
+{
+    Qt::MouseButtons buttons = {};
+    if (modifier & WebInputEvent::kLeftButtonDown)
+        buttons |= Qt::LeftButton;
+    if (modifier & WebInputEvent::kRightButtonDown)
+        buttons |= Qt::RightButton;
+    if (modifier & WebInputEvent::kMiddleButtonDown)
+        buttons |= Qt::MiddleButton;
+    return buttons;
+}
+
 static WebInputEvent::Type webEventTypeForEvent(const QEvent* event)
 {
     switch (event->type()) {
@@ -1471,6 +1511,14 @@ static void setBlinkWheelEventDelta(blink::WebMouseWheelEvent &webEvent)
     webEvent.delta_y = webEvent.wheel_ticks_y * wheelScrollLines * cDefaultQtScrollStep;
 }
 
+static QPoint getWheelEventDelta(const blink::WebGestureEvent &webEvent)
+{
+    static const float cDefaultQtScrollStep = 20.f;
+    static const int wheelScrollLines = QGuiApplication::styleHints()->wheelScrollLines();
+    return QPoint(webEvent.data.scroll_update.delta_x * QWheelEvent::DefaultDeltasPerStep / (wheelScrollLines * cDefaultQtScrollStep),
+                  webEvent.data.scroll_update.delta_y * QWheelEvent::DefaultDeltasPerStep / (wheelScrollLines * cDefaultQtScrollStep));
+}
+
 blink::WebMouseWheelEvent::Phase toBlinkPhase(QWheelEvent *ev)
 {
     switch (ev->phase()) {
@@ -1510,8 +1558,9 @@ blink::WebMouseWheelEvent WebEventFactory::toWebWheelEvent(QWheelEvent *ev)
     webEvent.wheel_ticks_y = static_cast<float>(ev->angleDelta().y()) / QWheelEvent::DefaultDeltasPerStep;
     webEvent.phase = toBlinkPhase(ev);
 #if defined(Q_OS_DARWIN)
-    // has_precise_scrolling_deltas is a macOS term meaning it is a system scroll gesture, see qnsview_mouse.mm
-    webEvent.has_precise_scrolling_deltas = (ev->source() == Qt::MouseEventSynthesizedBySystem);
+    // PrecisePixel is a macOS term meaning it is a system scroll gesture, see qnsview_mouse.mm
+    if (ev->source() == Qt::MouseEventSynthesizedBySystem)
+        webEvent.delta_units = ui::input_types::ScrollGranularity::kScrollByPrecisePixel;
 #endif
 
     setBlinkWheelEventDelta(webEvent);
@@ -1528,7 +1577,8 @@ bool WebEventFactory::coalesceWebWheelEvent(blink::WebMouseWheelEvent &webEvent,
     if (toBlinkPhase(ev) != webEvent.phase)
         return false;
 #if defined(Q_OS_DARWIN)
-    if (webEvent.has_precise_scrolling_deltas != (ev->source() == Qt::MouseEventSynthesizedBySystem))
+    if ((webEvent.delta_units == ui::input_types::ScrollGranularity::kScrollByPrecisePixel)
+            != (ev->source() == Qt::MouseEventSynthesizedBySystem))
         return false;
 #endif
 
@@ -1548,6 +1598,26 @@ bool WebEventFactory::coalesceWebWheelEvent(blink::WebMouseWheelEvent &webEvent,
     setBlinkWheelEventDelta(webEvent);
 
     return true;
+}
+
+static QPointF toQt(blink::WebFloatPoint p)
+{
+    return QPointF(p.x, p.y);
+}
+
+void WebEventFactory::sendUnhandledWheelEvent(const blink::WebGestureEvent &event,
+                                              RenderWidgetHostViewQtDelegate *delegate)
+{
+    Q_ASSERT(event.GetType() == blink::WebInputEvent::kGestureScrollUpdate);
+
+    QWheelEvent ev(toQt(event.PositionInWidget()),
+                   toQt(event.PositionInScreen()),
+                   QPoint(event.data.scroll_update.delta_x, event.data.scroll_update.delta_y),
+                   getWheelEventDelta(event),
+                   mouseButtonsForModifier(event.GetModifiers()),
+                   keyboardModifiersForModifier(event.GetModifiers()),
+                   Qt::NoScrollPhase, false);
+    delegate->unhandledWheelEvent(&ev);
 }
 
 content::NativeWebKeyboardEvent WebEventFactory::toWebKeyboardEvent(QKeyEvent *ev)
@@ -1684,3 +1754,5 @@ bool WebEventFactory::getEditCommand(QKeyEvent *event, std::string *editCommand)
 
     return false;
 }
+
+} // namespace QtWebEngineCore

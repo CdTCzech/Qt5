@@ -370,7 +370,7 @@ QFileDialog::QFileDialog(QWidget *parent,
                      const QString &caption,
                      const QString &directory,
                      const QString &filter)
-    : QDialog(*new QFileDialogPrivate, parent, 0)
+    : QDialog(*new QFileDialogPrivate, parent, { })
 {
     Q_D(QFileDialog);
     d->init(QUrl::fromLocalFile(directory), filter, caption);
@@ -380,7 +380,7 @@ QFileDialog::QFileDialog(QWidget *parent,
     \internal
 */
 QFileDialog::QFileDialog(const QFileDialogArgs &args)
-    : QDialog(*new QFileDialogPrivate, args.parent, 0)
+    : QDialog(*new QFileDialogPrivate, args.parent, { })
 {
     Q_D(QFileDialog);
     d->init(args.directory, args.filter, args.caption);
@@ -531,15 +531,15 @@ void QFileDialog::changeEvent(QEvent *e)
 QFileDialogPrivate::QFileDialogPrivate()
     :
 #if QT_CONFIG(proxymodel)
-        proxyModel(0),
+        proxyModel(nullptr),
 #endif
-        model(0),
+        model(nullptr),
         currentHistoryLocation(-1),
-        renameAction(0),
-        deleteAction(0),
-        showHiddenAction(0),
+        renameAction(nullptr),
+        deleteAction(nullptr),
+        showHiddenAction(nullptr),
         useDefaultCaption(true),
-        qFileDialogUi(0),
+        qFileDialogUi(nullptr),
         options(QFileDialogOptions::create())
 {
 }
@@ -882,14 +882,14 @@ void QFileDialog::setVisible(bool visible)
 #if QT_CONFIG(fscompleter)
             // So the completer doesn't try to complete and therefore show a popup
             if (!d->nativeDialogInUse)
-                d->completer->setModel(0);
+                d->completer->setModel(nullptr);
 #endif
         } else {
             d->createWidgets();
             setAttribute(Qt::WA_DontShowOnScreen, false);
 #if QT_CONFIG(fscompleter)
             if (!d->nativeDialogInUse) {
-                if (d->proxyModel != 0)
+                if (d->proxyModel != nullptr)
                     d->completer->setModel(d->proxyModel);
                 else
                     d->completer->setModel(d->model);
@@ -1041,7 +1041,7 @@ static inline bool isCaseSensitiveFileSystem(const QString &path)
     // Return case insensitive unconditionally, even if someone has a case sensitive
     // file system mounted, wrongly capitalized drive letters will cause mismatches.
     return false;
-#elif defined(Q_OS_OSX)
+#elif defined(Q_OS_MACOS)
     return pathconf(QFile::encodeName(path).constData(), _PC_CASE_SENSITIVE);
 #else
     return true;
@@ -1298,8 +1298,12 @@ QStringList QFileDialog::selectedFiles() const
     QStringList files;
     const QList<QUrl> userSelectedFiles = d->userSelectedFiles();
     files.reserve(userSelectedFiles.size());
-    for (const QUrl &file : userSelectedFiles)
-        files.append(file.toLocalFile());
+    for (const QUrl &file : userSelectedFiles) {
+        if (file.isLocalFile() || file.isEmpty())
+            files.append(file.toLocalFile());
+        else
+            files.append(file.toString());
+    }
     if (files.isEmpty() && d->usingWidgets()) {
         const FileMode fm = fileMode();
         if (fm != ExistingFile && fm != ExistingFiles)
@@ -1365,6 +1369,9 @@ QStringList qt_make_filter_list(const QString &filter)
     that these calls are all equivalent:
 
     \snippet code/src_gui_dialogs_qfiledialog.cpp 6
+
+    \note This is not supported on Android's native file dialog. Use
+        \l{setMimeTypeFilters()} instead.
 
     \sa setMimeTypeFilters(), setNameFilters()
 */
@@ -1437,6 +1444,9 @@ QStringList qt_strip_filters(const QStringList &filters)
     filters for each file type. For example, JPEG images have three possible
     extensions; if your application can open such files, selecting the
     \c image/jpeg mime type as a filter will allow you to open all of them.
+
+    \note This is not supported on Android's native file dialog. Use
+        \l{setMimeTypeFilters()} instead.
 */
 void QFileDialog::setNameFilters(const QStringList &filters)
 {
@@ -1824,7 +1834,7 @@ QModelIndex QFileDialogPrivate::rootIndex() const {
 
 QAbstractItemView *QFileDialogPrivate::currentView() const {
     if (!qFileDialogUi->stackedWidget)
-        return 0;
+        return nullptr;
     if (qFileDialogUi->stackedWidget->currentWidget() == qFileDialogUi->listView->parent())
         return qFileDialogUi->listView;
     return qFileDialogUi->treeView;
@@ -2038,7 +2048,7 @@ QAbstractItemDelegate *QFileDialog::itemDelegate() const
 {
     Q_D(const QFileDialog);
     if (!d->usingWidgets())
-        return 0;
+        return nullptr;
     return d->qFileDialogUi->listView->itemDelegate();
 }
 
@@ -2193,8 +2203,12 @@ QString QFileDialog::getOpenFileName(QWidget *parent,
                                Options options)
 {
     const QStringList schemes = QStringList(QStringLiteral("file"));
-    const QUrl selectedUrl = getOpenFileUrl(parent, caption, QUrl::fromLocalFile(dir), filter, selectedFilter, options, schemes);
-    return selectedUrl.toLocalFile();
+    const QUrl selectedUrl = getOpenFileUrl(parent, caption, QUrl::fromLocalFile(dir), filter,
+                                            selectedFilter, options, schemes);
+    if (selectedUrl.isLocalFile() || selectedUrl.isEmpty())
+        return selectedUrl.toLocalFile();
+    else
+        return selectedUrl.toString();
 }
 
 /*!
@@ -2303,11 +2317,16 @@ QStringList QFileDialog::getOpenFileNames(QWidget *parent,
                                           Options options)
 {
     const QStringList schemes = QStringList(QStringLiteral("file"));
-    const QList<QUrl> selectedUrls = getOpenFileUrls(parent, caption, QUrl::fromLocalFile(dir), filter, selectedFilter, options, schemes);
+    const QList<QUrl> selectedUrls = getOpenFileUrls(parent, caption, QUrl::fromLocalFile(dir),
+                                                     filter, selectedFilter, options, schemes);
     QStringList fileNames;
     fileNames.reserve(selectedUrls.size());
-    for (const QUrl &url : selectedUrls)
-        fileNames << url.toLocalFile();
+    for (const QUrl &url : selectedUrls) {
+        if (url.isLocalFile() || url.isEmpty())
+            fileNames << url.toLocalFile();
+        else
+            fileNames << url.toString();
+    }
     return fileNames;
 }
 
@@ -2425,14 +2444,15 @@ void QFileDialog::getOpenFileContent(const QString &nameFilter, const std::funct
     (*openFileImpl)();
 #else
     QFileDialog *dialog = new QFileDialog();
+    dialog->setFileMode(QFileDialog::ExistingFile);
     dialog->selectNameFilter(nameFilter);
 
     auto fileSelected = [=](const QString &fileName) {
         QByteArray fileContent;
         if (!fileName.isNull()) {
             QFile selectedFile(fileName);
-            selectedFile.open(QIODevice::ReadOnly);
-            fileContent = selectedFile.readAll();
+            if (selectedFile.open(QIODevice::ReadOnly))
+                fileContent = selectedFile.readAll();
         }
         fileOpenCompleted(fileName, fileContent);
     };
@@ -2549,8 +2569,12 @@ QString QFileDialog::getSaveFileName(QWidget *parent,
                                      Options options)
 {
     const QStringList schemes = QStringList(QStringLiteral("file"));
-    const QUrl selectedUrl = getSaveFileUrl(parent, caption, QUrl::fromLocalFile(dir), filter, selectedFilter, options, schemes);
-    return selectedUrl.toLocalFile();
+    const QUrl selectedUrl = getSaveFileUrl(parent, caption, QUrl::fromLocalFile(dir), filter,
+                                            selectedFilter, options, schemes);
+    if (selectedUrl.isLocalFile() || selectedUrl.isEmpty())
+        return selectedUrl.toLocalFile();
+    else
+        return selectedUrl.toString();
 }
 
 /*!
@@ -2657,8 +2681,12 @@ QString QFileDialog::getExistingDirectory(QWidget *parent,
                                           Options options)
 {
     const QStringList schemes = QStringList(QStringLiteral("file"));
-    const QUrl selectedUrl = getExistingDirectoryUrl(parent, caption, QUrl::fromLocalFile(dir), options, schemes);
-    return selectedUrl.toLocalFile();
+    const QUrl selectedUrl =
+            getExistingDirectoryUrl(parent, caption, QUrl::fromLocalFile(dir), options, schemes);
+    if (selectedUrl.isLocalFile() || selectedUrl.isEmpty())
+        return selectedUrl.toLocalFile();
+    else
+        return selectedUrl.toString();
 }
 
 /*!
@@ -2777,7 +2805,7 @@ void QFileDialog::done(int result)
     if (d->receiverToDisconnectOnClose) {
         disconnect(this, d->signalToDisconnectOnClose,
                    d->receiverToDisconnectOnClose, d->memberToDisconnectOnClose);
-        d->receiverToDisconnectOnClose = 0;
+        d->receiverToDisconnectOnClose = nullptr;
     }
     d->memberToDisconnectOnClose.clear();
     d->signalToDisconnectOnClose.clear();
@@ -3016,7 +3044,7 @@ void QFileDialogPrivate::init(const QUrl &directory, const QString &nameFilter,
     }
 
     q->setAcceptMode(QFileDialog::AcceptOpen);
-    nativeDialogInUse = platformFileDialogHelper() != 0;
+    nativeDialogInUse = platformFileDialogHelper() != nullptr;
     if (!nativeDialogInUse)
         createWidgets();
     q->setFileMode(QFileDialog::AnyFile);
@@ -3127,7 +3155,7 @@ void QFileDialogPrivate::createWidgets()
 
     // filetype
     qFileDialogUi->fileTypeCombo->setDuplicatesEnabled(false);
-    qFileDialogUi->fileTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLength);
+    qFileDialogUi->fileTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow);
     qFileDialogUi->fileTypeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     QObject::connect(qFileDialogUi->fileTypeCombo, SIGNAL(activated(int)),
                      q, SLOT(_q_useNameFilter(int)));
@@ -3274,7 +3302,7 @@ void QFileDialog::setProxyModel(QAbstractProxyModel *proxyModel)
             this, SLOT(_q_rowsInserted(QModelIndex)));
     }
 
-    if (proxyModel != 0) {
+    if (proxyModel != nullptr) {
         proxyModel->setParent(this);
         d->proxyModel = proxyModel;
         proxyModel->setSourceModel(d->model);
@@ -3287,13 +3315,13 @@ void QFileDialog::setProxyModel(QAbstractProxyModel *proxyModel)
         connect(d->proxyModel, SIGNAL(rowsInserted(QModelIndex,int,int)),
             this, SLOT(_q_rowsInserted(QModelIndex)));
     } else {
-        d->proxyModel = 0;
+        d->proxyModel = nullptr;
         d->qFileDialogUi->listView->setModel(d->model);
         d->qFileDialogUi->treeView->setModel(d->model);
 #if QT_CONFIG(fscompleter)
         d->completer->setModel(d->model);
         d->completer->sourceModel = d->model;
-        d->completer->proxyModel = 0;
+        d->completer->proxyModel = nullptr;
 #endif
         connect(d->model, SIGNAL(rowsInserted(QModelIndex,int,int)),
             this, SLOT(_q_rowsInserted(QModelIndex)));
@@ -3331,27 +3359,27 @@ QAbstractProxyModel *QFileDialog::proxyModel() const
 void QFileDialogPrivate::createToolButtons()
 {
     Q_Q(QFileDialog);
-    qFileDialogUi->backButton->setIcon(q->style()->standardIcon(QStyle::SP_ArrowBack, 0, q));
+    qFileDialogUi->backButton->setIcon(q->style()->standardIcon(QStyle::SP_ArrowBack, nullptr, q));
     qFileDialogUi->backButton->setAutoRaise(true);
     qFileDialogUi->backButton->setEnabled(false);
     QObject::connect(qFileDialogUi->backButton, SIGNAL(clicked()), q, SLOT(_q_navigateBackward()));
 
-    qFileDialogUi->forwardButton->setIcon(q->style()->standardIcon(QStyle::SP_ArrowForward, 0, q));
+    qFileDialogUi->forwardButton->setIcon(q->style()->standardIcon(QStyle::SP_ArrowForward, nullptr, q));
     qFileDialogUi->forwardButton->setAutoRaise(true);
     qFileDialogUi->forwardButton->setEnabled(false);
     QObject::connect(qFileDialogUi->forwardButton, SIGNAL(clicked()), q, SLOT(_q_navigateForward()));
 
-    qFileDialogUi->toParentButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogToParent, 0, q));
+    qFileDialogUi->toParentButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogToParent, nullptr, q));
     qFileDialogUi->toParentButton->setAutoRaise(true);
     qFileDialogUi->toParentButton->setEnabled(false);
     QObject::connect(qFileDialogUi->toParentButton, SIGNAL(clicked()), q, SLOT(_q_navigateToParent()));
 
-    qFileDialogUi->listModeButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogListView, 0, q));
+    qFileDialogUi->listModeButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogListView, nullptr, q));
     qFileDialogUi->listModeButton->setAutoRaise(true);
     qFileDialogUi->listModeButton->setDown(true);
     QObject::connect(qFileDialogUi->listModeButton, SIGNAL(clicked()), q, SLOT(_q_showListView()));
 
-    qFileDialogUi->detailModeButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogDetailedView, 0, q));
+    qFileDialogUi->detailModeButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogDetailedView, nullptr, q));
     qFileDialogUi->detailModeButton->setAutoRaise(true);
     QObject::connect(qFileDialogUi->detailModeButton, SIGNAL(clicked()), q, SLOT(_q_showDetailsView()));
 
@@ -3362,7 +3390,7 @@ void QFileDialogPrivate::createToolButtons()
     qFileDialogUi->forwardButton->setFixedSize(toolSize);
     qFileDialogUi->toParentButton->setFixedSize(toolSize);
 
-    qFileDialogUi->newFolderButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogNewFolder, 0, q));
+    qFileDialogUi->newFolderButton->setIcon(q->style()->standardIcon(QStyle::SP_FileDialogNewFolder, nullptr, q));
     qFileDialogUi->newFolderButton->setFixedSize(toolSize);
     qFileDialogUi->newFolderButton->setAutoRaise(true);
     qFileDialogUi->newFolderButton->setEnabled(false);
@@ -3599,7 +3627,7 @@ void QFileDialogPrivate::_q_showContextMenu(const QPoint &position)
     Q_UNUSED(position);
 #else
     Q_Q(QFileDialog);
-    QAbstractItemView *view = 0;
+    QAbstractItemView *view = nullptr;
     if (q->viewMode() == QFileDialog::Detail)
         view = qFileDialogUi->treeView;
     else
@@ -4342,7 +4370,7 @@ QStringList QFSCompleter::splitPath(const QString &path) const
     QRegExp re(QLatin1Char('[') + QRegExp::escape(sep) + QLatin1Char(']'));
 
 #if defined(Q_OS_WIN)
-    QStringList parts = pathCopy.split(re, QString::SkipEmptyParts);
+    QStringList parts = pathCopy.split(re, Qt::SkipEmptyParts);
     if (!doubleSlash.isEmpty() && !parts.isEmpty())
         parts[0].prepend(doubleSlash);
     if (pathCopy.endsWith(sep))

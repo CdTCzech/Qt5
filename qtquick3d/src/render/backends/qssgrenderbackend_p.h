@@ -1123,6 +1123,15 @@ public:
                              qint32 unit) = 0;
 
     /**
+     * @brief select active texture unit
+     *
+     * @param[in] unit          Which unit to bind for texture
+     *
+     * @return no return.
+     */
+    virtual void setActiveTexture(qint32 unit) = 0;
+
+    /**
      * @brief bind a image/texture object
      *
      * @param[in] to			Pointer to texture object
@@ -1322,6 +1331,14 @@ public:
      * @return false if it fails.
      */
     virtual bool setInputAssembler(QSSGRenderBackendInputAssemblerObject iao, QSSGRenderBackendShaderProgramObject po) = 0;
+
+    /**
+     * @brief Reset all the states cached in the backend
+     *        so as to ensure that backend commands to set necessary states are called.
+     *        This will be called every frame just before QtQuick3D rendering commands are called
+     *        because such states might have been changed outside of QtQuick3D.
+     */
+    virtual void resetStates() = 0;
 
     /**
      * @brief Set the per patch vertex count
@@ -1588,7 +1605,7 @@ public:
     /**
      * @brief create a shader program object
      *
-     * @param[in] isSeparable	Tell the backend that this program is separable
+     * @param[in] isSeparable   Tell the backend that this program is separable
      *
      * @return The created shader program object or nullptr if the creation failed.
      */
@@ -1597,7 +1614,7 @@ public:
     /**
      * @brief release a shader program object
      *
-     * @param[in] po		Pointer to shader program object
+     * @param[in] po            Pointer to shader program object
      *
      * @return No Return.
      */
@@ -1606,17 +1623,42 @@ public:
     /**
      * @brief link a shader program object
      *
-     * @param[in] po				Pointer to shader program object
-     * @param[in/out] errorMessage	Pointer to copy the error message
+     * @param[in] po                Pointer to shader program object
+     * @param[in/out] errorMessage  Pointer to copy the error message
      *
-     * @return True if program is succesful linked.
+     * @return True if program is successfully linked.
      */
     virtual bool linkProgram(QSSGRenderBackendShaderProgramObject po, QByteArray &errorMessage) = 0;
 
     /**
+     * @brief link a binary shader program object
+     *
+     * @param[in] po                Pointer to shader program object
+     * @param[in/out] errorMessage  Pointer to copy the error message
+     * @param[in] format            Binary format
+     * @param[in] binary            Binary data
+     *
+     * @return True if program is successfully linked.
+     */
+    virtual bool linkProgram(QSSGRenderBackendShaderProgramObject po,
+                             QByteArray &errorMessage,
+                             quint32 format, const QByteArray &binary) = 0;
+
+    /**
+     * @brief Get shader program binary
+     *
+     * @param[in] po            Pointer to shader program object
+     * @param[out] format       The format of the program binary
+     * @param[out] binary       The program binary data
+     *
+     */
+    virtual void getProgramBinary(QSSGRenderBackendShaderProgramObject po, quint32 &format,
+                                  QByteArray &binary) = 0;
+
+    /**
      * @brief Make a program current
      *
-     * @param[in] po				Pointer to shader program object
+     * @param[in] po        Pointer to shader program object
      *
      * @return No return
      */
