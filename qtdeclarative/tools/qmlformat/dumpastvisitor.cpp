@@ -30,7 +30,8 @@
 
 #include <QtQml/private/qqmljslexer_p.h>
 
-DumpAstVisitor::DumpAstVisitor(Node *rootNode, CommentAstVisitor *comment): m_comment(comment)
+DumpAstVisitor::DumpAstVisitor(QQmlJS::Engine *engine, Node *rootNode, CommentAstVisitor *comment)
+    : m_engine(engine), m_comment(comment)
 {
     // Add all completely orphaned comments
     m_result += getOrphanedComments(nullptr);
@@ -417,8 +418,11 @@ QString DumpAstVisitor::parseExpression(ExpressionNode *expression)
         return "--"+parseExpression(cast<PreDecrementExpression *>(expression)->expression);
     case Node::Kind_NumericLiteral:
         return QString::number(cast<NumericLiteral *>(expression)->value);
-    case Node::Kind_StringLiteral:
-        return escapeString(cast<StringLiteral *>(expression)->value.toString());
+    case Node::Kind_StringLiteral: {
+        auto srcLoc = cast<StringLiteral *>(expression)->firstSourceLocation();
+        return m_engine->code().mid(static_cast<int>(srcLoc.begin()),
+                                    static_cast<int>(srcLoc.end() - srcLoc.begin()));
+    }
     case Node::Kind_BinaryExpression: {
         auto *binExpr = expression->binaryExpressionCast();
         return parseExpression(binExpr->left) + " " + operatorToString(binExpr->op)
@@ -574,9 +578,27 @@ QString DumpAstVisitor::parseExportsList(ExportsList *list)
     return result;
 }
 
+bool needsSemicolon(int kind)
+{
+    switch (kind) {
+    case Node::Kind_ForStatement:
+    case Node::Kind_ForEachStatement:
+    case Node::Kind_IfStatement:
+    case Node::Kind_SwitchStatement:
+    case Node::Kind_WhileStatement:
+    case Node::Kind_DoWhileStatement:
+    case Node::Kind_TryStatement:
+    case Node::Kind_WithStatement:
+        return false;
+    default:
+        return true;
+    }
+}
+
 QString DumpAstVisitor::parseBlock(Block *block, bool hasNext, bool allowBraceless)
 {
-    bool hasOneLine = (block->statements == nullptr || block->statements->next == nullptr) && allowBraceless;
+    bool hasOneLine =
+            (block->statements != nullptr && block->statements->next == nullptr) && allowBraceless;
 
     QString result = hasOneLine ? "\n" : "{\n";
     m_indentLevel++;
@@ -589,7 +611,12 @@ QString DumpAstVisitor::parseBlock(Block *block, bool hasNext, bool allowBracele
     if (!hasNext && !hasOneLine)
         result += formatLine("}", false);
 
-    m_blockNeededBraces |= (block->statements && block->statements->next != nullptr);
+    if (block->statements) {
+        m_blockNeededBraces |= !needsSemicolon(block->statements->statement->kind)
+                || (block->statements->next != nullptr);
+    } else {
+        m_blockNeededBraces = true;
+    }
 
     return result;
 }
@@ -688,6 +715,10 @@ QString DumpAstVisitor::parseStatement(Statement *statement, bool blockHasNext,
                 result += formatLine("else", false);
 
             if (ifFalseBlock) {
+                // Blocks generate an extra newline that we don't want here.
+                if (!m_blockNeededBraces && ifFalse.endsWith(QLatin1String("\n")))
+                    ifFalse.chop(1);
+
                 result += " " + ifFalse;
             } else {
                 result += "\n";
@@ -826,27 +857,12 @@ QString DumpAstVisitor::parseStatement(Statement *statement, bool blockHasNext,
     }
 }
 
-bool needsSemicolon(int kind)
-{
-    switch (kind)
-    {
-    case Node::Kind_ForStatement:
-    case Node::Kind_ForEachStatement:
-    case Node::Kind_IfStatement:
-    case Node::Kind_SwitchStatement:
-    case Node::Kind_WhileStatement:
-    case Node::Kind_DoWhileStatement:
-    case Node::Kind_TryStatement:
-    case Node::Kind_WithStatement:
-        return false;
-    default:
-        return true;
-    }
-}
-
 QString DumpAstVisitor::parseStatementList(StatementList *list)
 {
     QString result = "";
+
+    if (list == nullptr)
+        return "";
 
     result += getOrphanedComments(list);
 
@@ -1020,6 +1036,47 @@ QHash<QString, UiObjectMember*> findBindings(UiObjectMemberList *list) {
     return bindings;
 }
 
+bool DumpAstVisitor::visit(UiInlineComponent *node)
+{
+    if (scope().m_firstObject) {
+        if (scope().m_firstOfAll)
+            scope().m_firstOfAll = false;
+        else
+            addNewLine();
+
+        scope().m_firstObject = false;
+    }
+
+    addLine(getComment(node, Comment::Location::Front));
+    addLine(getComment(node, Comment::Location::Front_Inline));
+    addLine("component " + node->name + ": "
+            + parseUiQualifiedId(node->component->qualifiedTypeNameId) + " {");
+
+    m_indentLevel++;
+
+    ScopeProperties props;
+    props.m_bindings = findBindings(node->component->initializer->members);
+    m_scope_properties.push(props);
+
+    m_result += getOrphanedComments(node);
+
+    return true;
+}
+
+void DumpAstVisitor::endVisit(UiInlineComponent *node)
+{
+    m_indentLevel--;
+
+    m_scope_properties.pop();
+
+    bool need_comma = scope().m_inArrayBinding && scope().m_lastInArrayBinding != node;
+
+    addLine(need_comma ? "}," : "}");
+    addLine(getComment(node, Comment::Location::Back));
+    if (!scope().m_inArrayBinding)
+        addNewLine();
+}
+
 bool DumpAstVisitor::visit(UiObjectDefinition *node) {
     if (scope().m_firstObject) {
         if (scope().m_firstOfAll)
@@ -1111,7 +1168,19 @@ bool DumpAstVisitor::visit(UiScriptBinding *node) {
 
     addLine(getComment(node, Comment::Location::Front));
 
+    bool multiline = !needsSemicolon(node->statement->kind);
+
+    if (multiline) {
+        m_indentLevel++;
+    }
+
     QString statement = parseStatement(node->statement);
+
+    if (multiline) {
+        statement = "{\n" + formatLine(statement);
+        m_indentLevel--;
+        statement += formatLine("}", false);
+    }
 
     QString result = parseUiQualifiedId(node->qualifiedId) + ":";
 
@@ -1169,8 +1238,14 @@ void DumpAstVisitor::endVisit(UiArrayBinding *) {
 }
 
 bool DumpAstVisitor::visit(FunctionDeclaration *node) {
+    if (scope().m_firstFunction) {
+        if (scope().m_firstOfAll)
+            scope().m_firstOfAll = false;
+        else
+            addNewLine();
 
-    addNewLine();
+        scope().m_firstFunction = false;
+    }
 
     addLine(getComment(node, Comment::Location::Front));
 
@@ -1188,13 +1263,16 @@ bool DumpAstVisitor::visit(FunctionDeclaration *node) {
 
     addLine(head);
     m_indentLevel++;
+
+    return true;
+}
+
+void DumpAstVisitor::endVisit(FunctionDeclaration *node)
+{
     m_result += parseStatementList(node->body);
     m_indentLevel--;
     addLine("}");
-
     addNewLine();
-
-    return true;
 }
 
 bool DumpAstVisitor::visit(UiObjectBinding *node) {

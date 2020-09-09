@@ -148,8 +148,8 @@ Scene3DItem::Scene3DItem(QQuickItem *parent)
     , m_viewHolderEntity(nullptr)
     , m_viewHolderFG(nullptr)
     , m_aspectEngine(new Qt3DCore::QAspectEngine())
-    , m_renderAspect(nullptr)
     , m_aspectToDelete(nullptr)
+    , m_renderAspect(nullptr)
     , m_renderer(nullptr)
     , m_multisample(true)
     , m_dirty(true)
@@ -181,6 +181,8 @@ Scene3DItem::~Scene3DItem()
     // Scene3DSGNode still exist and will perform their cleanup on their own.
     m_aspectEngine->deleteLater();
     m_renderer->deleteLater();
+    if (m_dummySurface)
+        m_dummySurface->deleteLater();
 }
 
 /*!

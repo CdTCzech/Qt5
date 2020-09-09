@@ -72,6 +72,8 @@
 #include <QtCore/QLibraryInfo>
 #include <QtCore/QRunnable>
 #include <QtQml/qqmlincubator.h>
+#include <QtQml/qqmlinfo.h>
+#include <QtQml/private/qqmlmetatype_p.h>
 
 #include <QtQuick/private/qquickpixmapcache_p.h>
 
@@ -298,6 +300,79 @@ static bool transformDirtyOnItemOrAncestor(const QQuickItem *item)
 }
 #endif
 
+/*!
+ *  \internal
+
+    A "polish loop" can occur inside QQuickWindowPrivate::polishItems(). It is when an item calls
+    polish() on an(other?) item from updatePolish(). If this anomaly happens repeatedly and without
+    interruption (of a well-behaved updatePolish() that doesn't call polish()), it is a strong
+    indication that we are heading towards an infinite polish loop. A polish loop is not a bug in
+    Qt Quick - it is a bug caused by ill-behaved items put in the scene.
+
+    We can detect this sequence of polish loops easily, since the
+    QQuickWindowPrivate::itemsToPolish is basically a stack: polish() will push to it, and
+    polishItems() will pop from it.
+    Therefore if updatePolish() calls polish(), the immediate next item polishItems() processes is
+    the item that was polished by the previous call to updatePolish().
+    We therefore just need to count the number of polish loops we detected in _sequence_.
+*/
+struct PolishLoopDetector
+{
+    PolishLoopDetector(const QVector<QQuickItem*> &itemsToPolish)
+        : itemsToPolish(itemsToPolish)
+    {
+    }
+
+    /*
+     * returns true when it detected a likely infinite loop
+     * (suggests it should abort the polish loop)
+     **/
+    bool check(QQuickItem *item, int itemsRemainingBeforeUpdatePolish)
+    {
+        if (itemsToPolish.count() > itemsRemainingBeforeUpdatePolish) {
+            // Detected potential polish loop.
+            ++numPolishLoopsInSequence;
+            if (numPolishLoopsInSequence >= 1000) {
+                // Start to warn about polish loop after 1000 consecutive polish loops
+                if (numPolishLoopsInSequence == 100000) {
+                    // We have looped 100,000 times without actually reducing the list of items to
+                    // polish, give up for now.
+                    // This is not a fix, just a remedy so that the application can be somewhat
+                    // responsive.
+                    numPolishLoopsInSequence = 0;
+                    return true;
+                } else if (numPolishLoopsInSequence < 1005) {
+                    // Show the 5 next items involved in the polish loop.
+                    // (most likely they will be the same 5 items...)
+                    QQuickItem *guiltyItem = itemsToPolish.last();
+                    qmlWarning(item) << "possible QQuickItem::polish() loop";
+
+                    auto typeAndObjectName = [](QQuickItem *item) {
+                        QString typeName = QQmlMetaType::prettyTypeName(item);
+                        QString objName = item->objectName();
+                        if (!objName.isNull())
+                            return QLatin1String("%1(%2)").arg(typeName, objName);
+                        return typeName;
+                    };
+
+                    qmlWarning(guiltyItem) << typeAndObjectName(guiltyItem)
+                               << " called polish() inside updatePolish() of " << typeAndObjectName(item);
+
+                    if (numPolishLoopsInSequence == 1004)
+                        // Enough warnings. Reset counter in order to speed things up and re-detect
+                        // more loops
+                        numPolishLoopsInSequence = 0;
+                }
+            }
+        } else {
+            numPolishLoopsInSequence = 0;
+        }
+        return false;
+    }
+    const QVector<QQuickItem*> &itemsToPolish;      // Just a ref to the one in polishItems()
+    int numPolishLoopsInSequence = 0;
+};
+
 void QQuickWindowPrivate::polishItems()
 {
     // An item can trigger polish on another item, or itself for that matter,
@@ -305,19 +380,20 @@ void QQuickWindowPrivate::polishItems()
     // iterate through the set, we must continue pulling items out until it
     // is empty.
     // In the case where polish is called from updatePolish() either directly
-    // or indirectly, we use a recursionSafeguard to print a warning to
-    // the user.
-    int recursionSafeguard = INT_MAX;
-    while (!itemsToPolish.isEmpty() && --recursionSafeguard > 0) {
+    // or indirectly, we use a PolishLoopDetector to determine if a warning should
+    // be printed to the user.
+
+    PolishLoopDetector polishLoopDetector(itemsToPolish);
+    while (!itemsToPolish.isEmpty()) {
         QQuickItem *item = itemsToPolish.takeLast();
         QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
         itemPrivate->polishScheduled = false;
+        const int itemsRemaining = itemsToPolish.count();
         itemPrivate->updatePolish();
         item->updatePolish();
+        if (polishLoopDetector.check(item, itemsRemaining) == true)
+            break;
     }
-
-    if (recursionSafeguard == 0)
-        qWarning("QQuickWindow: possible QQuickItem::polish() loop");
 
 #if QT_CONFIG(im)
     if (QQuickItem *focusItem = q_func()->activeFocusItem()) {
@@ -1528,8 +1604,9 @@ bool QQuickWindow::isPersistentOpenGLContext() const
 
 
 /*!
-    Sets whether the scene graph nodes and resources can be released
-    to \a persistent.  The default value is true.
+    Sets whether the scene graph nodes and resources are \a persistent.
+    Persistent means the nodes and resources cannot be released.
+    The default value is \c true.
 
     The scene graph nodes and resources can be released to free up
     graphics resources when the window is obscured, hidden or not
@@ -1769,6 +1846,25 @@ bool QQuickWindow::event(QEvent *e)
     case QEvent::LanguageChange:
         if (d->contentItem)
             QCoreApplication::sendEvent(d->contentItem, e);
+        break;
+    case QEvent::InputMethod:
+    case QEvent::InputMethodQuery:
+        {
+            QQuickItem *target = d->activeFocusItem;
+            // while an input method delivers the event, this window might still be inactive
+            if (!target) {
+                target = d->contentItem;
+                if (!target || !target->isEnabled())
+                    break;
+                // see setFocusInScope for a similar loop
+                while (target->isFocusScope() && target->scopedFocusItem() && target->scopedFocusItem()->isEnabled())
+                    target = target->scopedFocusItem();
+            }
+            if (target) {
+                QCoreApplication::sendEvent(target, e);
+                return true;
+            }
+        }
         break;
     default:
         break;
@@ -2356,6 +2452,9 @@ void QQuickWindowPrivate::flushFrameSynchronousEvents()
             ut->startAnimations();
     }
 
+    // In webOS we already have the alternative to the issue that this
+    // wanted to address and thus skipping this part won't break anything.
+#if !defined(Q_OS_WEBOS)
     // Once per frame, if any items are dirty, send a synthetic hover,
     // in case items have changed position, visibility, etc.
     // For instance, during animation (including the case of a ListView
@@ -2367,6 +2466,7 @@ void QQuickWindowPrivate::flushFrameSynchronousEvents()
         if (!delivered)
             clearHover(); // take care of any exits
     }
+#endif
 }
 
 QQuickPointerEvent *QQuickWindowPrivate::queryPointerEventInstance(QQuickPointerDevice *device, QEvent::Type eventType) const
@@ -3038,15 +3138,19 @@ QPair<QQuickItem*, QQuickPointerHandler*> QQuickWindowPrivate::findCursorItemAnd
             if (ret.first)
                 return ret;
         }
-        if (itemPrivate->hasCursor || itemPrivate->hasCursorHandler) {
-            QPointF p = item->mapFromScene(scenePos);
-            if (!item->contains(p))
-                return {nullptr, nullptr};
-            if (itemPrivate->hasCursorHandler) {
-                if (auto handler = itemPrivate->effectiveCursorHandler())
+        if (itemPrivate->hasCursorHandler) {
+            if (auto handler = itemPrivate->effectiveCursorHandler()) {
+                QQuickPointerEvent *pointerEvent = pointerEventInstance(QQuickPointerDevice::genericMouseDevice(), QEvent::MouseMove);
+                pointerEvent->point(0)->reset(Qt::TouchPointMoved, scenePos, quint64(1) << 24 /* mouse has device ID 1 */, 0);
+                pointerEvent->point(0)->setAccepted(true);
+                pointerEvent->localize(item);
+                if (handler->parentContains(pointerEvent->point(0)))
                     return {item, handler};
             }
-            if (itemPrivate->hasCursor)
+        }
+        if (itemPrivate->hasCursor) {
+            QPointF p = item->mapFromScene(scenePos);
+            if (item->contains(p))
                 return {item, nullptr};
         }
     }

@@ -563,7 +563,8 @@ public:
     static bool signalHasReceivers(QObject *qobject, const char *signalName)
     {
         Q_ASSERT(qobject);
-        return static_cast<QAxObject *>(qobject)->receivers(QByteArray::number(QSIGNAL_CODE) + signalName);
+        const QByteArray name = QByteArray::number(QSIGNAL_CODE) + signalName;
+        return static_cast<QAxObject *>(qobject)->receivers(name.constData()) > 0;
     }
 
     IConnectionPoint *cpoint = nullptr;
@@ -1554,7 +1555,7 @@ public:
     void readEventInfo();
     void readEventInterface(ITypeInfo *eventinfo, IConnectionPoint *cpoint);
 
-    inline void addClassInfo(const char *key, const char *value)
+    inline void addClassInfo(const QByteArray &key, const  QByteArray &value)
     {
         classinfo_list.insert(key, value);
     }
@@ -2192,7 +2193,7 @@ void MetaObjectGenerator::readClassInfo()
     if (dispInfo && !typelib)
         dispInfo->GetContainingTypeLib(&typelib, &index);
 
-    if (!typelib) {
+    if (!typelib && !that->control().isEmpty()) {
         QSettings controls(QLatin1String("HKEY_LOCAL_MACHINE\\Software"), QSettings::NativeFormat);
         QString tlid = controls.value(QLatin1String("/Classes/CLSID/") + that->control() + QLatin1String("/TypeLib/.")).toString();
         QString tlfile;
@@ -2259,8 +2260,11 @@ void MetaObjectGenerator::readClassInfo()
         }
     }
 
-    if (!d || !dispInfo || !cacheKey.isEmpty() || !d->tryCache)
+    if (!d || !dispInfo || !cacheKey.isEmpty() || !d->tryCache) {
+        if (disp && !dispInfo)
+            qWarning("%s: IDispatch %p does not provide interface information", Q_FUNC_INFO, disp);
         return;
+    }
 
     TYPEATTR *typeattr = nullptr;
     dispInfo->GetTypeAttr(&typeattr);

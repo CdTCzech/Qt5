@@ -859,6 +859,9 @@ bool Batch::geometryWasChanged(QSGGeometryNode *gn)
 
 void Batch::cleanupRemovedElements()
 {
+    if (!needsPurge)
+        return;
+
     // remove from front of batch..
     while (first && first->removed) {
         first = first->nextInBatch;
@@ -875,6 +878,8 @@ void Batch::cleanupRemovedElements()
 
         }
     }
+
+    needsPurge = false;
 }
 
 /*
@@ -1379,6 +1384,7 @@ void Renderer::nodeWasRemoved(Node *node)
             }
             if (e->batch) {
                 e->batch->needsUpload = true;
+                e->batch->needsPurge = true;
             }
 
         }
@@ -1400,7 +1406,6 @@ void Renderer::nodeWasRemoved(Node *node)
         if (e) {
             e->removed = true;
             m_elementsToDelete.add(e);
-
             if (m_renderNodeElements.isEmpty()) {
                 static const bool useDepth = qEnvironmentVariableIsEmpty("QSG_NO_DEPTH_BUFFER");
                 if (m_rhi)
@@ -1408,6 +1413,9 @@ void Renderer::nodeWasRemoved(Node *node)
                 else
                     m_useDepthBuffer = useDepth && m_context->openglContext()->format().depthBufferSize() > 0;
             }
+
+            if (e->batch != nullptr)
+                e->batch->needsPurge = true;
         }
     }
 
@@ -1472,6 +1480,11 @@ void Renderer::nodeChanged(QSGNode *node, QSGNode::DirtyState state)
     // to avoid that any of the others are processed twice.
     if (state & QSGNode::DirtySubtreeBlocked) {
         Node *sn = m_nodes.value(node);
+
+        // Force a batch rebuild if this includes an opacity change
+        if (state & QSGNode::DirtyOpacity)
+            m_rebuild |= FullRebuild;
+
         bool blocked = node->isSubtreeBlocked();
         if (blocked && sn) {
             nodeChanged(node, QSGNode::DirtyNodeRemoved);
@@ -2419,20 +2432,18 @@ ClipState::ClipType Renderer::updateStencilClip(const QSGClipNode *clip)
         // TODO: Check for multisampling and pixel grid alignment.
         bool isRectangleWithNoPerspective = clip->isRectangular()
                 && qFuzzyIsNull(m(3, 0)) && qFuzzyIsNull(m(3, 1));
-        bool noRotate = qFuzzyIsNull(m(0, 1)) && qFuzzyIsNull(m(1, 0));
-        bool isRotate90 = qFuzzyIsNull(m(0, 0)) && qFuzzyIsNull(m(1, 1));
-
-        if (isRectangleWithNoPerspective && (noRotate || isRotate90)) {
-            QRectF bbox = clip->clipRect();
+        auto noRotate = [] (const QMatrix4x4 &m) { return qFuzzyIsNull(m(0, 1)) && qFuzzyIsNull(m(1, 0)); };
+        auto isRotate90 = [] (const QMatrix4x4 &m) { return qFuzzyIsNull(m(0, 0)) && qFuzzyIsNull(m(1, 1)); };
+        auto scissorRect = [&] (const QRectF &bbox, const QMatrix4x4 &m) {
             qreal invW = 1 / m(3, 3);
             qreal fx1, fy1, fx2, fy2;
-            if (noRotate) {
+            if (noRotate(m)) {
                 fx1 = (bbox.left() * m(0, 0) + m(0, 3)) * invW;
                 fy1 = (bbox.bottom() * m(1, 1) + m(1, 3)) * invW;
                 fx2 = (bbox.right() * m(0, 0) + m(0, 3)) * invW;
                 fy2 = (bbox.top() * m(1, 1) + m(1, 3)) * invW;
             } else {
-                Q_ASSERT(isRotate90);
+                Q_ASSERT(isRotate90(m));
                 fx1 = (bbox.bottom() * m(0, 1) + m(0, 3)) * invW;
                 fy1 = (bbox.left() * m(1, 0) + m(1, 3)) * invW;
                 fx2 = (bbox.top() * m(0, 1) + m(0, 3)) * invW;
@@ -2451,12 +2462,18 @@ ClipState::ClipType Renderer::updateStencilClip(const QSGClipNode *clip)
             GLint ix2 = qRound((fx2 + 1) * deviceRect.width() * qreal(0.5));
             GLint iy2 = qRound((fy2 + 1) * deviceRect.height() * qreal(0.5));
 
+            return QRect(ix1, iy1, ix2 - ix1, iy2 - iy1);
+        };
+
+        if (isRectangleWithNoPerspective && (noRotate(m) || isRotate90(m))) {
+            auto rect = scissorRect(clip->clipRect(), m);
+
             if (!(clipType & ClipState::ScissorClip)) {
-                m_currentScissorRect = QRect(ix1, iy1, ix2 - ix1, iy2 - iy1);
+                m_currentScissorRect = rect;
                 glEnable(GL_SCISSOR_TEST);
                 clipType |= ClipState::ScissorClip;
             } else {
-                m_currentScissorRect &= QRect(ix1, iy1, ix2 - ix1, iy2 - iy1);
+                m_currentScissorRect &= rect;
             }
             glScissor(m_currentScissorRect.x(), m_currentScissorRect.y(),
                       m_currentScissorRect.width(), m_currentScissorRect.height());
@@ -2471,9 +2488,31 @@ ClipState::ClipType Renderer::updateStencilClip(const QSGClipNode *clip)
                     m_clipProgram.link();
                     m_clipMatrixId = m_clipProgram.uniformLocation("matrix");
                 }
+                const QSGClipNode *clipNext = clip->clipList();
+                if (clipNext) {
+                    QMatrix4x4 mNext = m_current_projection_matrix;
+                    if (clipNext->matrix())
+                        mNext *= *clipNext->matrix();
+
+                    auto rect = scissorRect(clipNext->clipRect(), mNext);
+
+                    ClipState::ClipType clipTypeNext = clipType ;
+                    clipTypeNext |= ClipState::StencilClip;
+                    QRect m_next_scissor_rect = m_currentScissorRect;
+                    if (!(clipTypeNext & ClipState::ScissorClip)) {
+                        m_next_scissor_rect = rect;
+                        glEnable(GL_SCISSOR_TEST);
+                    } else {
+                        m_next_scissor_rect =
+                           m_currentScissorRect & rect;
+                    }
+                    glScissor(m_next_scissor_rect.x(), m_next_scissor_rect.y(),
+                              m_next_scissor_rect.width(), m_next_scissor_rect.height());
+                }
 
                 glClearStencil(0);
                 glClear(GL_STENCIL_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);
                 glEnable(GL_STENCIL_TEST);
                 glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
                 glDepthMask(GL_FALSE);

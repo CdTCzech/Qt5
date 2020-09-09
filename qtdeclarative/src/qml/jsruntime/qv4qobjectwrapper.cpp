@@ -382,7 +382,7 @@ ReturnedValue QObjectWrapper::getQmlProperty(QV4::ExecutionEngine *engine, QQmlC
         if (hasProperty)
             *hasProperty = true;
 
-        if (property)
+        if (property && result != &local)
             *property = result;
 
         return getProperty(engine, object, result);
@@ -1453,8 +1453,11 @@ static int MatchScore(const QV4::Value &actual, int conversionType)
         }
 
         if (obj->as<QV4::QQmlValueTypeWrapper>()) {
-            if (obj->engine()->toVariant(actual, -1).userType() == conversionType)
+            const QVariant v = obj->engine()->toVariant(actual, -1);
+            if (v.userType() == conversionType)
                 return 0;
+            else if (v.canConvert(conversionType))
+                return 5;
             return 10;
         } else if (conversionType == QMetaType::QJsonObject) {
             return 5;

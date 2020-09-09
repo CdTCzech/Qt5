@@ -209,7 +209,7 @@ bool ScopeTree::checkMemberAccess(
     if (scopeMethodIt != scope->m_methods.end())
         return true; // Access to property of JS function
 
-    for (const auto enumerator : scope->m_enums) {
+    for (const auto &enumerator : scope->m_enums) {
         for (const QString &key : enumerator.keys()) {
             if (access->m_name != key)
                 continue;
@@ -229,13 +229,11 @@ bool ScopeTree::checkMemberAccess(
         }
     }
 
-    auto type = types.value(scopeName);
+    auto type = types.value(access->m_parentType.isEmpty() ? scopeName : access->m_parentType);
     while (type) {
         const auto typeIt = type->m_properties.find(access->m_name);
         if (typeIt != type->m_properties.end()) {
-            const ScopeTree *propType = access->m_parentType.isEmpty()
-                    ? typeIt->type()
-                    : types.value(access->m_parentType).get();
+            const ScopeTree *propType = typeIt->type();
             return checkMemberAccess(code, access.get(),
                                      propType ? propType : types.value(typeIt->typeName()).get(),
                                      types, colorOut);

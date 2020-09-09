@@ -87,6 +87,8 @@
 
 #include <QDebug>
 
+#include <qtgui_tracepoints_p.h>
+
 #ifndef GL_KHR_blend_equation_advanced
 #define GL_KHR_blend_equation_advanced 1
 #define GL_MULTIPLY_KHR                   0x9294
@@ -635,6 +637,8 @@ static inline void setCoords(GLfloat *coords, const QOpenGLRect &rect)
 
 void QOpenGL2PaintEngineExPrivate::drawTexture(const QOpenGLRect& dest, const QOpenGLRect& src, const QSize &textureSize, bool opaque, bool pattern)
 {
+    Q_TRACE_SCOPE(QOpenGL2PaintEngineExPrivate_drawTexture, dest, src, textureSize, opaque, pattern);
+
     // Setup for texture drawing
     currentBrush = noBrush;
 
@@ -2499,7 +2503,7 @@ void QOpenGL2PaintEngineEx::clip(const QVectorPath &path, Qt::ClipOperation op)
                 && qFuzzyIsNull(state()->matrix.m11())
                 && qFuzzyIsNull(state()->matrix.m22())))
         {
-            state()->rectangleClip = state()->rectangleClip.intersected(state()->matrix.mapRect(rect).toRect());
+            state()->rectangleClip = state()->rectangleClip.intersected(state()->matrix.mapRect(rect).toAlignedRect());
             d->updateClipScissorTest();
             return;
         }

@@ -688,11 +688,17 @@ void QQuickMouseArea::mouseMoveEvent(QMouseEvent *event)
         return;
     }
 
-    d->saveEvent(event);
-
     // ### we should skip this if these signals aren't used
     // ### can GV handle this for us?
-    setHovered(contains(d->lastPos));
+    setHovered(contains(event->localPos()));
+
+    if ((event->buttons() & acceptedMouseButtons()) == 0) {
+        QQuickItem::mouseMoveEvent(event);
+        return;
+    }
+
+    d->saveEvent(event);
+
 
 #if QT_CONFIG(quick_draganddrop)
     if (d->drag && d->drag->target()) {
@@ -743,7 +749,7 @@ void QQuickMouseArea::mouseMoveEvent(QMouseEvent *event)
 
         if (d->drag->active()) {
             d->drag->target()->setPosition(boundedDragPos);
-            d->lastPos = d->lastScenePos - mapToScene(position());
+            d->lastPos = mapFromScene(d->lastScenePos);
         }
 
         bool dragOverThresholdX = QQuickWindowPrivate::dragOverThreshold(dragPos.x() - startPos.x(),
@@ -1362,6 +1368,7 @@ void QQuickMouseArea::resetPressAndHoldInterval()
     \qmlproperty real QtQuick::MouseArea::drag.maximumY
     \qmlproperty bool QtQuick::MouseArea::drag.filterChildren
     \qmlproperty real QtQuick::MouseArea::drag.threshold
+    \qmlproperty bool QtQuick::MouseArea::drag.smoothed
 
     \c drag provides a convenient way to make an item draggable.
 

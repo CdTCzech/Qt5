@@ -129,7 +129,7 @@ void qGamma_correct_back_to_linear_cs(QImage *image)
  *****************************************************************************/
 
 // The drawhelper conversions from/to RGB32 are passthroughs which is not always correct for general image conversion
-#if !defined(__ARM_NEON__)
+#if !defined(__ARM_NEON__) || !(Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
 static void QT_FASTCALL storeRGB32FromARGB32PM(uchar *dest, const uint *src, int index, int count,
                                                const QVector<QRgb> *, QDitherInfo *)
 {
@@ -159,7 +159,7 @@ static const uint *QT_FASTCALL fetchRGB32ToARGB32PM(uint *buffer, const uchar *s
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
 extern void QT_FASTCALL storeRGB32FromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count,
                                                     const QVector<QRgb> *, QDitherInfo *);
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
 extern void QT_FASTCALL storeRGB32FromARGB32PM_neon(uchar *dest, const uint *src, int index, int count,
                                                     const QVector<QRgb> *, QDitherInfo *);
 #endif
@@ -187,7 +187,7 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
                 store = storeRGB32FromARGB32PM_sse4;
             else
                 store = storeRGB32FromARGB32PM;
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
             store = storeRGB32FromARGB32PM_neon;
 #else
             store = storeRGB32FromARGB32PM;
@@ -236,14 +236,15 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
     int segments = src->nbytes / (1<<16);
     segments = std::min(segments, src->height);
 
-    if (segments <= 1)
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments <= 1 || threadPool->contains(QThread::currentThread()))
         return convertSegment(0, src->height);
 
     QSemaphore semaphore;
     int y = 0;
     for (int i = 0; i < segments; ++i) {
         int yn = (src->height - y) / (segments - i);
-        QThreadPool::globalInstance()->start([&, y, yn]() {
+        threadPool->start([&, y, yn]() {
             convertSegment(y, y + yn);
             semaphore.release(1);
         });
@@ -290,14 +291,15 @@ void convert_generic_to_rgb64(QImageData *dest, const QImageData *src, Qt::Image
     int segments = src->nbytes / (1<<16);
     segments = std::min(segments, src->height);
 
-    if (segments <= 1)
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments <= 1 || threadPool->contains(QThread::currentThread()))
         return convertSegment(0, src->height);
 
     QSemaphore semaphore;
     int y = 0;
     for (int i = 0; i < segments; ++i) {
         int yn = (src->height - y) / (segments - i);
-        QThreadPool::globalInstance()->start([&, y, yn]() {
+        threadPool->start([&, y, yn]() {
             convertSegment(y, y + yn);
             semaphore.release(1);
         });
@@ -349,7 +351,7 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
                 store = storeRGB32FromARGB32PM_sse4;
             else
                 store = storeRGB32FromARGB32PM;
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
             store = storeRGB32FromARGB32PM_neon;
 #else
             store = storeRGB32FromARGB32PM;
@@ -396,12 +398,13 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
 #ifdef QT_USE_THREAD_PARALLEL_IMAGE_CONVERSIONS
     int segments = data->nbytes / (1<<16);
     segments = std::min(segments, data->height);
-    if (segments > 1) {
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments > 1 && !threadPool->contains(QThread::currentThread())) {
         QSemaphore semaphore;
         int y = 0;
         for (int i = 0; i < segments; ++i) {
             int yn = (data->height - y) / (segments - i);
-            QThreadPool::globalInstance()->start([&, y, yn]() {
+            threadPool->start([&, y, yn]() {
                 convertSegment(y, y + yn);
                 semaphore.release(1);
             });

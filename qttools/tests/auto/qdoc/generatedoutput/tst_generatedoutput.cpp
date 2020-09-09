@@ -72,6 +72,7 @@ private slots:
     void generatePhase();
     void noAutoList();
     void nestedMacro();
+    void headerFile();
 
 private:
     QScopedPointer<QTemporaryDir> m_outputDir;
@@ -331,6 +332,7 @@ void tst_generatedOutput::templateParameters()
 {
     testAndCompare("testdata/configs/testtemplate.qdocconf",
                    "template/testqdoc-test.html "
+                   "template/testqdoc-test-struct.html "
                    "template/foo.html "
                    "template/bar.html "
                    "template/baz.html");
@@ -414,11 +416,19 @@ void tst_generatedOutput::noAutoList()
                    "noautolist-docbook/qdoc-test-qmlmodule.xml");
 }
 
-
 void tst_generatedOutput::nestedMacro()
 {
     testAndCompare("testdata/configs/nestedmacro.qdocconf",
                    "nestedmacro/testcpp-module.html");
+}
+
+void tst_generatedOutput::headerFile()
+{
+    testAndCompare("testdata/configs/headerfile.qdocconf",
+                   "headerfile/testheader.html "
+                   "headerfile/headers.html "
+                   "headerfile-docbook/testheader.xml "
+                   "headerfile-docbook/headers.xml");
 }
 
 int main(int argc, char *argv[])

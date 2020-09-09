@@ -214,7 +214,7 @@ struct QSSGSubsetMaterialVertexPipeline : public QSSGVertexPipelineImpl
         tessEvalShader.append("    gl_Position = modelViewProjection * pos;\n");
     }
 
-    void beginVertexGeneration(quint32 displacementImageIdx, QSSGRenderableImage *displacementImage) override
+    void beginVertexGeneration(const QSSGShaderDefaultMaterialKey &inKey, quint32 displacementImageIdx, QSSGRenderableImage *displacementImage) override
     {
         m_displacementIdx = displacementImageIdx;
         m_displacementImage = displacementImage;
@@ -248,7 +248,7 @@ struct QSSGSubsetMaterialVertexPipeline : public QSSGVertexPipelineImpl
                      << "\n";
 
         if (displacementImage) {
-            generateUVCoords();
+            generateUVCoords(inKey);
             materialGenerator()->generateImageUVCoordinates(*this, displacementImageIdx, 0, *displacementImage);
             if (!hasTessellation()) {
                 vertexShader.addUniform("displaceAmount", "float");
@@ -286,9 +286,9 @@ struct QSSGSubsetMaterialVertexPipeline : public QSSGVertexPipelineImpl
 
         if (hasTessellation()) {
             generateWorldPosition();
-            generateWorldNormal();
+            generateWorldNormal(inKey);
             generateObjectNormal();
-            generateVarTangentAndBinormal();
+            generateVarTangentAndBinormal(inKey);
         }
     }
 
@@ -314,12 +314,10 @@ struct QSSGSubsetMaterialVertexPipeline : public QSSGVertexPipelineImpl
 
         if (inUVSet == 0) {
             vertex().addIncoming("attr_uv0", "vec2");
-            vertex() << "    varTexCoord0 = attr_uv0;"
-                     << "\n";
+            vertex() << "    varTexCoord0 = attr_uv0;\n";
         } else if (inUVSet == 1) {
             vertex().addIncoming("attr_uv1", "vec2");
-            vertex() << "    varTexCoord1 = attr_uv1;"
-                     << "\n";
+            vertex() << "    varTexCoord1 = attr_uv1;\n";
         }
     }
 
@@ -346,30 +344,42 @@ struct QSSGSubsetMaterialVertexPipeline : public QSSGVertexPipelineImpl
         assignOutput("varWorldPos", "local_model_world_position");
     }
 
-    void doGenerateVarTangentAndBinormal() override
+    void doGenerateVarTangent() override
     {
         vertex().addIncoming("attr_textan", "vec3");
+
+        bool hasNPatchTessellation = tessMode == TessellationModeValues::NPatch;
+        if (!hasNPatchTessellation)
+            vertex() << "    varTangent = normalMatrix * attr_textan;\n";
+        else
+            vertex() << "    varTangent = attr_textan;\n";
+    }
+
+    void doGenerateVarBinormal() override
+    {
         vertex().addIncoming("attr_binormal", "vec3");
 
         bool hasNPatchTessellation = tessMode == TessellationModeValues::NPatch;
-
-        if (!hasNPatchTessellation) {
-            vertex() << "    varTangent = normalMatrix * attr_textan;"
-                     << "\n"
-                     << "    varBinormal = normalMatrix * attr_binormal;"
-                     << "\n";
-        } else {
-            vertex() << "    varTangent = attr_textan;"
-                     << "\n"
-                     << "    varBinormal = attr_binormal;"
-                     << "\n";
-        }
+        if (!hasNPatchTessellation)
+            vertex() << "    varBinormal = normalMatrix * attr_binormal;\n";
+        else
+            vertex() << "    varBinormal = attr_binormal;\n";
     }
 
-    void doGenerateVertexColor() override
+    void doGenerateVertexColor(const QSSGShaderDefaultMaterialKey &inKey) override
     {
-        vertex().addIncoming("attr_color", "vec3");
+        const bool meshHasColors = renderer.defaultMaterialShaderKeyProperties().m_vertexAttributes.getBitValue(
+                QSSGShaderKeyVertexAttribute::Color, inKey);
+        if (meshHasColors)
+            vertex().addIncoming("attr_color", "vec4");
+        else
+            vertex().append("    vec4 attr_color = vec4(0.0, 0.0, 0.0, 1.0);");
         vertex().append("    varColor = attr_color;");
+    }
+
+    bool hasAttributeInKey(QSSGShaderKeyVertexAttribute::VertexAttributeBits inAttr, const QSSGShaderDefaultMaterialKey &inKey) override
+    {
+        return renderer.defaultMaterialShaderKeyProperties().m_vertexAttributes.getBitValue(inAttr, inKey);
     }
 
     void endVertexGeneration(bool customShader) override

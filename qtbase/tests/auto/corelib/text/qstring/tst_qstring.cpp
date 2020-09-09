@@ -373,6 +373,7 @@ private slots:
     void remove_string();
     void remove_regexp_data();
     void remove_regexp();
+    void remove_extra();
     void swap();
 
     void prepend_qstring()            { prepend_impl<QString>(); }
@@ -3100,6 +3101,15 @@ void tst_QString::remove_regexp()
     }
 }
 
+void tst_QString::remove_extra()
+{
+    {
+        QString s = "The quick brown fox jumps over the lazy dog. "
+                    "The lazy dog jumps over the quick brown fox.";
+        s.remove(s);
+    }
+}
+
 void tst_QString::toNum()
 {
 #if defined (Q_OS_WIN) && defined (Q_CC_MSVC)
@@ -5317,6 +5327,9 @@ void tst_QString::operator_smaller()
     QVERIFY(QString("b") >= QByteArray("a"));
     QVERIFY(QString("b") > QByteArray("a"));
 
+#if QT_DEPRECATED_SINCE(5, 15)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QVERIFY(QByteArray("a") < QString("b"));
     QVERIFY(QByteArray("a") <= QString("b"));
     QVERIFY(QByteArray("a") <= QString("a"));
@@ -5324,6 +5337,8 @@ void tst_QString::operator_smaller()
     QVERIFY(QByteArray("a") >= QString("a"));
     QVERIFY(QByteArray("b") >= QString("a"));
     QVERIFY(QByteArray("b") > QString("a"));
+QT_WARNING_POP
+#endif
 
     QVERIFY(QLatin1String("a") < QString("b"));
     QVERIFY(QLatin1String("a") <= QString("b"));

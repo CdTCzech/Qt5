@@ -1581,7 +1581,11 @@ void QMainWindowLayout::setTabShape(QTabWidget::TabShape tabShape)
 
 QTabWidget::TabPosition QMainWindowLayout::tabPosition(Qt::DockWidgetArea area) const
 {
-    return tabPositions[toDockPos(area)];
+    const auto dockPos = toDockPos(area);
+    if (dockPos < QInternal::DockCount)
+        return tabPositions[dockPos];
+    qWarning("QMainWindowLayout::tabPosition called with out-of-bounds value '%d'", int(area));
+    return QTabWidget::North;
 }
 
 void QMainWindowLayout::setTabPosition(Qt::DockWidgetAreas areas, QTabWidget::TabPosition tabPosition)
@@ -1780,6 +1784,15 @@ bool QMainWindowTabBar::event(QEvent *e)
 
 QTabBar *QMainWindowLayout::getTabBar()
 {
+    if (!usedTabBars.isEmpty()) {
+        /*
+            If dock widgets have been removed and added while the main window was
+            hidden, then the layout hasn't been activated yet, and tab bars from empty
+            docking areas haven't been put in the cache yet.
+        */
+        activate();
+    }
+
     QTabBar *result = nullptr;
     if (!unusedTabBars.isEmpty()) {
         result = unusedTabBars.takeLast();

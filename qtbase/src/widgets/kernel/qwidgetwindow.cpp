@@ -62,6 +62,7 @@ Q_WIDGETS_EXPORT QWidget *qt_button_down = nullptr; // widget got last button-do
 // popup control
 QWidget *qt_popup_down = nullptr; // popup that contains the pressed widget
 extern int openPopupCount;
+bool qt_popup_down_closed = false; // qt_popup_down has been closed
 bool qt_replay_popup_mouse_event = false;
 extern bool qt_try_modal(QWidget *widget, QEvent::Type type);
 
@@ -249,10 +250,14 @@ bool QWidgetWindow::event(QEvent *event)
     }
 
     switch (event->type()) {
-    case QEvent::Close:
+    case QEvent::Close: {
+        // The widget might be deleted in the close event handler.
+        QPointer<QObject> guard = this;
         handleCloseEvent(static_cast<QCloseEvent *>(event));
-        QWindow::event(event);
+        if (guard)
+            QWindow::event(event);
         return true;
+    }
 
     case QEvent::Enter:
     case QEvent::Leave:
@@ -522,6 +527,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         case QEvent::MouseButtonDblClick:
             qt_button_down = popupChild;
             qt_popup_down = activePopupWidget;
+            qt_popup_down_closed = false;
             break;
         case QEvent::MouseButtonRelease:
             releaseAfter = true;
@@ -566,7 +572,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             if ((event->type() != QEvent::MouseButtonPress)
                     || !(event->flags().testFlag(Qt::MouseEventCreatedDoubleClick))) {
                 // if the widget that was pressed is gone, then deliver move events without buttons
-                const auto buttons = event->type() == QEvent::MouseMove && qt_button_down == nullptr
+                const auto buttons = event->type() == QEvent::MouseMove && qt_popup_down_closed
                                    ? Qt::NoButton : event->buttons();
                 QMouseEvent e(event->type(), widgetPos, event->windowPos(), event->screenPos(),
                               event->button(), buttons, event->modifiers(), event->source());
@@ -639,11 +645,13 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
 
         if (releaseAfter) {
             qt_button_down = nullptr;
+            qt_popup_down_closed = false;
             qt_popup_down = nullptr;
         }
         return;
     }
 
+    qt_popup_down_closed = false;
     // modal event handling
     if (QApplicationPrivate::instance()->modalState() && !qt_try_modal(m_widget, event->type()))
         return;
@@ -864,7 +872,10 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
     QPoint mapped = widget->mapFrom(rootWidget, pos);
 
 #if QT_DEPRECATED_SINCE(5, 0)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers(), event->phase(), event->source(), event->inverted());
+QT_WARNING_POP
 #else
     QWheelEvent translated(QPointF(mapped), event->globalPosition(), event->pixelDelta(), event->angleDelta(),
                            event->buttons(), event->modifiers(), event->phase(), event->inverted(), event->source());

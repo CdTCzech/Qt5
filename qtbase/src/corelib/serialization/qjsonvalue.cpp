@@ -349,7 +349,6 @@ void QJsonValue::swap(QJsonValue &other) noexcept
     error cases as e.g. accessing a non existing key in a QJsonObject.
  */
 
-
 /*!
     Converts \a variant to a QJsonValue and returns it.
 
@@ -437,10 +436,40 @@ void QJsonValue::swap(QJsonValue &other) noexcept
             "stringification" of map keys.
     \endtable
 
-    For all other QVariant types a conversion to a QString will be attempted. If the returned string
-    is empty, a Null QJsonValue will be stored, otherwise a String value using the returned QString.
+    \section2 Loss of information and other types
 
-    \sa toVariant()
+    QVariant can carry more information than is representable in JSON. If the
+    QVariant is not one of the types above, the conversion is not guaranteed
+    and is subject to change in future versions of Qt, as the UUID one did.
+    Code should strive not to use any other types than those listed above.
+
+    If QVariant::isNull() returns true, a null QJsonValue is returned or
+    inserted into the list or object, regardless of the type carried by
+    QVariant. Note the behavior change in Qt 6.0 affecting QVariant::isNull()
+    also affects this function.
+
+    A floating point value that is either an infinity or NaN will be converted
+    to a null JSON value. Since Qt 6.0, QJsonValue can store the full precision
+    of any 64-bit signed integer without loss, but in previous versions values
+    outside the range of ±2^53 may lose precision. Unsigned 64-bit values
+    greater than or equal to 2^63 will either lose precision or alias to
+    negative values, so QMetaType::ULongLong should be avoided.
+
+    For other types not listed above, a conversion to string will be attempted,
+    usually but not always by calling QVariant::toString(). If the conversion
+    fails the value is replaced by a null JSON value. Note that
+    QVariant::toString() is also lossy for the majority of types. For example,
+    if the passed QVariant is representing raw byte array data, it is recommended
+    to pre-encode it to \l {https://www.ietf.org/rfc/rfc4648.txt}{Base64} (or
+    another lossless encoding), otherwise a lossy conversion using QString::fromUtf8()
+    will be used.
+
+    Please note that the conversions via QVariant::toString() are subject to
+    change at any time. Both QVariant and QJsonValue may be extended in the
+    future to support more types, which will result in a change in how this
+    function performs conversions.
+
+    \sa toVariant(), QCborValue::fromVariant()
  */
 QJsonValue QJsonValue::fromVariant(const QVariant &variant)
 {
@@ -454,8 +483,10 @@ QJsonValue QJsonValue::fromVariant(const QVariant &variant)
     case QMetaType::Double:
     case QMetaType::LongLong:
     case QMetaType::ULongLong:
-    case QMetaType::UInt:
-        return QJsonValue(variant.toDouble());
+    case QMetaType::UInt: {
+        double v = variant.toDouble();
+        return qt_is_finite(v) ? QJsonValue(v) : QJsonValue();
+    }
     case QMetaType::QString:
         return QJsonValue(variant.toString());
     case QMetaType::QStringList:
@@ -504,7 +535,7 @@ QJsonValue QJsonValue::fromVariant(const QVariant &variant)
 
     \value Null     QMetaType::Nullptr
     \value Bool     QMetaType::Bool
-    \value Double   QMetaType::Double
+    \value Double   QMetaType::Double or QMetaType::LongLong
     \value String   QString
     \value Array    QVariantList
     \value Object   QVariantMap
@@ -520,6 +551,7 @@ QVariant QJsonValue::toVariant() const
     case QCborValue::False:
         return false;
     case QCborValue::Integer:
+        return n;
     case QCborValue::Double:
         return toDouble();
     case QCborValue::String:

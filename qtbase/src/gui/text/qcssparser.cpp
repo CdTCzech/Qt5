@@ -127,6 +127,7 @@ static const QCssKnownValue properties[NumProperties - 1] = {
     { "image", QtImage },
     { "image-position", QtImageAlignment },
     { "left", Left },
+    { "letter-spacing", LetterSpacing },
     { "line-height", LineHeight },
     { "list-style", ListStyle },
     { "list-style-type", ListStyleType },
@@ -171,7 +172,8 @@ static const QCssKnownValue properties[NumProperties - 1] = {
     { "top", Top },
     { "vertical-align", VerticalAlignment },
     { "white-space", Whitespace },
-    { "width", Width }
+    { "width", Width },
+    { "word-spacing", WordSpacing }
 };
 
 static const QCssKnownValue values[NumKnownValues - 1] = {
@@ -362,7 +364,7 @@ static bool operator<(const QCssKnownValue &prop, const QString &name)
 
 static quint64 findKnownValue(const QString &name, const QCssKnownValue *start, int numValues)
 {
-    const QCssKnownValue *end = &start[numValues - 1];
+    const QCssKnownValue *end = start + numValues - 1;
     const QCssKnownValue *prop = std::lower_bound(start, end, name);
     if ((prop == end) || (name < *prop))
         return 0;
@@ -386,6 +388,8 @@ static inline bool isInheritable(Property propertyId)
     case FontVariant:
     case TextTransform:
     case LineHeight:
+    case LetterSpacing:
+    case WordSpacing:
         return true;
     default:
         break;
@@ -422,11 +426,10 @@ LengthData ValueExtractor::lengthValue(const Value& v)
 
 static int lengthValueFromData(const LengthData& data, const QFont& f)
 {
-    if (data.unit == LengthData::Ex)
-        return qRound(QFontMetrics(f).xHeight() * data.number);
-    else if (data.unit == LengthData::Em)
-        return qRound(QFontMetrics(f).height() * data.number);
-    return qRound(data.number);
+    const int scale = (data.unit == LengthData::Ex ? QFontMetrics(f).xHeight()
+                      : data.unit == LengthData::Em ? QFontMetrics(f).height() : 1);
+    // raised lower limit due to the implementation of qRound()
+    return qRound(qBound(double(INT_MIN) + 0.1, scale * data.number, double(INT_MAX)));
 }
 
 int ValueExtractor::lengthValue(const Declaration &decl)
@@ -1247,6 +1250,37 @@ static void setTextDecorationFromValues(const QVector<QCss::Value> &values, QFon
     }
 }
 
+static void setLetterSpacingFromValue(const QCss::Value &value, QFont *font)
+{
+    QString s = value.variant.toString();
+    qreal val;
+    bool ok = false;
+    if (s.endsWith(QLatin1String("em"), Qt::CaseInsensitive)) {
+        s.chop(2);
+        val = s.toDouble(&ok);
+        if (ok)
+            font->setLetterSpacing(QFont::PercentageSpacing, (val + 1.0) * 100);
+    } else if (s.endsWith(QLatin1String("px"), Qt::CaseInsensitive)) {
+        s.chop(2);
+        val = s.toDouble(&ok);
+        if (ok)
+            font->setLetterSpacing(QFont::AbsoluteSpacing, val);
+    }
+}
+
+static void setWordSpacingFromValue(const QCss::Value &value, QFont *font)
+{
+    QString s = value.variant.toString();
+    if (s.endsWith(QLatin1String("px"), Qt::CaseInsensitive)) {
+        s.chop(2);
+        qreal val;
+        bool ok = false;
+        val = s.toDouble(&ok);
+        if (ok)
+            font->setWordSpacing(val);
+    }
+}
+
 static void parseShorthandFontProperty(const QVector<QCss::Value> &values, QFont *font, int *fontSizeAdjustment)
 {
     font->setStyle(QFont::StyleNormal);
@@ -1319,6 +1353,8 @@ bool ValueExtractor::extractFont(QFont *font, int *fontSizeAdjustment)
             case Font: parseShorthandFontProperty(decl.d->values, font, fontSizeAdjustment); break;
             case FontVariant: setFontVariantFromValue(val, font); break;
             case TextTransform: setTextTransformFromValue(val, font); break;
+            case LetterSpacing: setLetterSpacingFromValue(val, font); break;
+            case WordSpacing: setWordSpacingFromValue(val, font); break;
             default: continue;
         }
         hit = true;

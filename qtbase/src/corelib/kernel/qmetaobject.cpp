@@ -56,6 +56,7 @@
 
 #include "private/qobject_p.h"
 #include "private/qmetaobject_p.h"
+#include "private/qthread_p.h"
 
 // for normalizeTypeInternal
 #include "private/qmetaobject_moc_p.h"
@@ -1526,10 +1527,14 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
     if (! object)
         return false;
 
-    QThread *currentThread = QThread::currentThread();
+    Qt::HANDLE currentThreadId = QThread::currentThreadId();
     QThread *objectThread = object->thread();
+    bool receiverInSameThread = false;
+    if (objectThread)
+        receiverInSameThread = currentThreadId == QThreadData::get2(objectThread)->threadId.loadRelaxed();
+
     if (type == Qt::AutoConnection)
-        type = (currentThread == objectThread) ? Qt::DirectConnection : Qt::QueuedConnection;
+        type = receiverInSameThread ? Qt::DirectConnection : Qt::QueuedConnection;
 
     void *argv[] = { ret };
 
@@ -1545,7 +1550,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
         QCoreApplication::postEvent(object, new QMetaCallEvent(slot, nullptr, -1, 1));
     } else if (type == Qt::BlockingQueuedConnection) {
 #if QT_CONFIG(thread)
-        if (currentThread == objectThread)
+        if (receiverInSameThread)
             qWarning("QMetaObject::invokeMethod: Dead lock detected");
 
         QSemaphore semaphore;
@@ -1578,17 +1583,17 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 */
 
 /*! \fn bool QMetaObject::invokeMethod(QObject *obj, const char *member,
-                             Qt::ConnectionType type,
-                             QGenericArgument val0 = QGenericArgument(0),
-                             QGenericArgument val1 = QGenericArgument(),
-                             QGenericArgument val2 = QGenericArgument(),
-                             QGenericArgument val3 = QGenericArgument(),
-                             QGenericArgument val4 = QGenericArgument(),
-                             QGenericArgument val5 = QGenericArgument(),
-                             QGenericArgument val6 = QGenericArgument(),
-                             QGenericArgument val7 = QGenericArgument(),
-                             QGenericArgument val8 = QGenericArgument(),
-                             QGenericArgument val9 = QGenericArgument())
+                                       Qt::ConnectionType type,
+                                       QGenericArgument val0 = QGenericArgument(0),
+                                       QGenericArgument val1 = QGenericArgument(),
+                                       QGenericArgument val2 = QGenericArgument(),
+                                       QGenericArgument val3 = QGenericArgument(),
+                                       QGenericArgument val4 = QGenericArgument(),
+                                       QGenericArgument val5 = QGenericArgument(),
+                                       QGenericArgument val6 = QGenericArgument(),
+                                       QGenericArgument val7 = QGenericArgument(),
+                                       QGenericArgument val8 = QGenericArgument(),
+                                       QGenericArgument val9 = QGenericArgument())
 
     \threadsafe
     \overload invokeMethod()
@@ -1598,16 +1603,16 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 
 /*!
     \fn bool QMetaObject::invokeMethod(QObject *obj, const char *member,
-                             QGenericArgument val0 = QGenericArgument(0),
-                             QGenericArgument val1 = QGenericArgument(),
-                             QGenericArgument val2 = QGenericArgument(),
-                             QGenericArgument val3 = QGenericArgument(),
-                             QGenericArgument val4 = QGenericArgument(),
-                             QGenericArgument val5 = QGenericArgument(),
-                             QGenericArgument val6 = QGenericArgument(),
-                             QGenericArgument val7 = QGenericArgument(),
-                             QGenericArgument val8 = QGenericArgument(),
-                             QGenericArgument val9 = QGenericArgument())
+                                       QGenericArgument val0 = QGenericArgument(0),
+                                       QGenericArgument val1 = QGenericArgument(),
+                                       QGenericArgument val2 = QGenericArgument(),
+                                       QGenericArgument val3 = QGenericArgument(),
+                                       QGenericArgument val4 = QGenericArgument(),
+                                       QGenericArgument val5 = QGenericArgument(),
+                                       QGenericArgument val6 = QGenericArgument(),
+                                       QGenericArgument val7 = QGenericArgument(),
+                                       QGenericArgument val8 = QGenericArgument(),
+                                       QGenericArgument val9 = QGenericArgument())
 
     \threadsafe
     \overload invokeMethod()
@@ -2255,11 +2260,15 @@ bool QMetaMethod::invoke(QObject *object,
     if (paramCount <= QMetaMethodPrivate::get(this)->parameterCount())
         return false;
 
+    Qt::HANDLE currentThreadId = QThread::currentThreadId();
+    QThread *objectThread = object->thread();
+    bool receiverInSameThread = false;
+    if (objectThread)
+        receiverInSameThread = currentThreadId == QThreadData::get2(objectThread)->threadId.loadRelaxed();
+
     // check connection type
     if (connectionType == Qt::AutoConnection) {
-        QThread *currentThread = QThread::currentThread();
-        QThread *objectThread = object->thread();
-        connectionType = currentThread == objectThread
+        connectionType = receiverInSameThread
                          ? Qt::DirectConnection
                          : Qt::QueuedConnection;
     }
@@ -2330,9 +2339,7 @@ bool QMetaMethod::invoke(QObject *object,
         QCoreApplication::postEvent(object, event.take());
     } else { // blocking queued connection
 #if QT_CONFIG(thread)
-        QThread *currentThread = QThread::currentThread();
-        QThread *objectThread = object->thread();
-        if (currentThread == objectThread) {
+        if (receiverInSameThread) {
             qWarning("QMetaMethod::invoke: Dead lock detected in "
                         "BlockingQueuedConnection: Receiver is %s(%p)",
                         mobj->className(), object);
@@ -2423,7 +2430,18 @@ bool QMetaMethod::invoke(QObject *object,
 
     \sa Q_ARG(), Q_RETURN_ARG(), qRegisterMetaType(), QMetaObject::invokeMethod()
 */
-bool QMetaMethod::invokeOnGadget(void* gadget, QGenericReturnArgument returnValue, QGenericArgument val0, QGenericArgument val1, QGenericArgument val2, QGenericArgument val3, QGenericArgument val4, QGenericArgument val5, QGenericArgument val6, QGenericArgument val7, QGenericArgument val8, QGenericArgument val9) const
+bool QMetaMethod::invokeOnGadget(void *gadget,
+                                 QGenericReturnArgument returnValue,
+                                 QGenericArgument val0,
+                                 QGenericArgument val1,
+                                 QGenericArgument val2,
+                                 QGenericArgument val3,
+                                 QGenericArgument val4,
+                                 QGenericArgument val5,
+                                 QGenericArgument val6,
+                                 QGenericArgument val7,
+                                 QGenericArgument val8,
+                                 QGenericArgument val9) const
 {
    if (!gadget || !mobj)
         return false;
@@ -2490,16 +2508,16 @@ bool QMetaMethod::invokeOnGadget(void* gadget, QGenericReturnArgument returnValu
 
 /*!
     \fn bool QMetaMethod::invokeOnGadget(void *gadget,
-            QGenericArgument val0 = QGenericArgument(0),
-            QGenericArgument val1 = QGenericArgument(),
-            QGenericArgument val2 = QGenericArgument(),
-            QGenericArgument val3 = QGenericArgument(),
-            QGenericArgument val4 = QGenericArgument(),
-            QGenericArgument val5 = QGenericArgument(),
-            QGenericArgument val6 = QGenericArgument(),
-            QGenericArgument val7 = QGenericArgument(),
-            QGenericArgument val8 = QGenericArgument(),
-            QGenericArgument val9 = QGenericArgument()) const
+                                         QGenericArgument val0 = QGenericArgument(0),
+                                         QGenericArgument val1 = QGenericArgument(),
+                                         QGenericArgument val2 = QGenericArgument(),
+                                         QGenericArgument val3 = QGenericArgument(),
+                                         QGenericArgument val4 = QGenericArgument(),
+                                         QGenericArgument val5 = QGenericArgument(),
+                                         QGenericArgument val6 = QGenericArgument(),
+                                         QGenericArgument val7 = QGenericArgument(),
+                                         QGenericArgument val8 = QGenericArgument(),
+                                         QGenericArgument val9 = QGenericArgument()) const
 
     \overload
     \since 5.5

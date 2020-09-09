@@ -1379,7 +1379,7 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
                 int iconSpacing = 4;//### 4 is currently hardcoded in QPushButton::sizeHint()
                 if (!button->text.isEmpty()) {
                     int textWidth = button->fontMetrics.boundingRect(opt->rect, tf, button->text).width();
-                    labelWidth += (textWidth + iconSpacing * 2);
+                    labelWidth += (textWidth + iconSpacing);
                 }
 
                 QRect iconRect = QRect(textRect.x() + (textRect.width() - labelWidth) / 2,
@@ -1390,10 +1390,10 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
 
                 if (button->direction == Qt::RightToLeft) {
                     tf |= Qt::AlignRight;
-                    textRect.setRight(iconRect.left() - iconSpacing);
+                    textRect.setRight(iconRect.left() - iconSpacing / 2);
                 } else {
                     tf |= Qt::AlignLeft; //left align, we adjust the text-rect instead
-                    textRect.setLeft(iconRect.left() + iconRect.width() + iconSpacing);
+                    textRect.setLeft(iconRect.left() + iconRect.width() + iconSpacing / 2);
                 }
 
                 if (button->state & (State_On | State_Sunken))
@@ -4781,14 +4781,19 @@ int QCommonStyle::pixelMetric(PixelMetric m, const QStyleOption *opt, const QWid
             } else if (widget) {
                 isWindow = widget->isWindow();
             }
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
             ret = proxy()->pixelMetric(isWindow ? PM_DefaultTopLevelMargin : PM_DefaultChildMargin, opt);
+QT_WARNING_POP
         }
         break;
     case PM_LayoutHorizontalSpacing:
     case PM_LayoutVerticalSpacing:
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
         ret = proxy()->pixelMetric(PM_DefaultLayoutSpacing, opt);
+QT_WARNING_POP
         break;
 
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
     case PM_DefaultTopLevelMargin:
         ret = int(QStyleHelper::dpiScaled(11, opt));
         break;
@@ -4798,6 +4803,7 @@ int QCommonStyle::pixelMetric(PixelMetric m, const QStyleOption *opt, const QWid
     case PM_DefaultLayoutSpacing:
         ret = int(QStyleHelper::dpiScaled(6, opt));
         break;
+QT_WARNING_POP
 
     case PM_ToolBarIconSize:
         ret = 0;

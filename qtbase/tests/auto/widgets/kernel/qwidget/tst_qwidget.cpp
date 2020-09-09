@@ -187,6 +187,7 @@ private slots:
     void reverseTabOrder();
     void tabOrderWithProxy();
     void tabOrderWithCompoundWidgets();
+    void tabOrderWithCompoundWidgetsNoFocusPolicy();
     void tabOrderNoChange();
     void tabOrderNoChange2();
     void appFocusWidgetWithFocusProxyLater();
@@ -373,6 +374,7 @@ private slots:
 
     void openModal_taskQTBUG_5804();
 
+    void focusProxy();
     void focusProxyAndInputMethods();
 #ifdef QT_BUILD_INTERNAL
     void scrollWithoutBackingStore();
@@ -416,6 +418,7 @@ private slots:
 
     void winIdAfterClose();
     void receivesLanguageChangeEvent();
+    void deleteWindowInCloseEvent();
 
 private:
     bool ensureScreenSize(int width, int height);
@@ -2121,6 +2124,51 @@ static void dumpFocusChain(QWidget *start, bool bForward, const char *desc = nul
 #endif
 }
 
+void tst_QWidget::tabOrderWithCompoundWidgetsNoFocusPolicy()
+{
+    Container container;
+    container.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
+    QSpinBox spinbox1;
+    spinbox1.setObjectName("spinbox1");
+    QSpinBox spinbox2;
+    spinbox2.setObjectName("spinbox2");
+    QSpinBox spinbox3;
+    spinbox3.setObjectName("spinbox3");
+
+    spinbox1.setFocusPolicy(Qt::StrongFocus);
+    spinbox2.setFocusPolicy(Qt::NoFocus);
+    spinbox3.setFocusPolicy(Qt::StrongFocus);
+    container.box->addWidget(&spinbox1);
+    container.box->addWidget(&spinbox2);
+    container.box->addWidget(&spinbox3);
+
+    container.show();
+    container.activateWindow();
+
+    QApplication::setActiveWindow(&container);
+    if (!QTest::qWaitForWindowActive(&container))
+        QSKIP("Window failed to activate, skipping test");
+
+    QVERIFY2(spinbox1.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    container.tab();
+    QVERIFY2(!spinbox2.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    QVERIFY2(spinbox3.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    container.tab();
+    QVERIFY2(spinbox1.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    container.backTab();
+    QVERIFY2(spinbox3.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    container.backTab();
+    QVERIFY2(!spinbox2.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+    QVERIFY2(spinbox1.hasFocus(),
+             qPrintable(QApplication::focusWidget()->objectName()));
+}
+
 void tst_QWidget::tabOrderNoChange()
 {
     QWidget w;
@@ -2234,12 +2282,16 @@ void tst_QWidget::appFocusWidgetWhenLosingFocusProxy()
     QApplication::setActiveWindow(&window);
     QVERIFY(QTest::qWaitForWindowActive(&window));
     QCOMPARE(QApplication::focusWidget(), lineEditFocusProxy);
+    QVERIFY(lineEdit->hasFocus());
+    QVERIFY(lineEditFocusProxy->hasFocus());
 
     // When unsetting the focus proxy
     lineEdit->setFocusProxy(nullptr);
 
-    // Then the application focus widget should be back to the lineedit
-    QCOMPARE(QApplication::focusWidget(), lineEdit);
+    // then the focus widget should not change
+    QCOMPARE(QApplication::focusWidget(), lineEditFocusProxy);
+    QVERIFY(!lineEdit->hasFocus());
+    QVERIFY(lineEditFocusProxy->hasFocus());
 }
 
 void tst_QWidget::explicitTabOrderWithComplexWidget()
@@ -10078,6 +10130,124 @@ void tst_QWidget::openModal_taskQTBUG_5804()
     QVERIFY(QTest::qWaitForWindowExposed(win.data()));
 }
 
+/*!
+    Test that the focus proxy receives focus, and that changing the
+    focus proxy of a widget that has focus passes focus on correctly.
+
+    The test uses a single window, so we can rely on the window's focus
+    widget and the QApplication focus widget to be the same.
+*/
+void tst_QWidget::focusProxy()
+{
+    QWidget window;
+    window.setFocusPolicy(Qt::StrongFocus);
+    class Container : public QWidget
+    {
+    public:
+        Container()
+        {
+            edit = new QLineEdit;
+            edit->installEventFilter(this);
+            setFocusProxy(edit);
+            QHBoxLayout *layout = new QHBoxLayout;
+            layout->addWidget(edit);
+            setLayout(layout);
+        }
+
+        QLineEdit *edit;
+        int focusInCount = 0;
+        int focusOutCount = 0;
+
+    protected:
+        bool eventFilter(QObject *receiver, QEvent *event)
+        {
+            if (receiver == edit) {
+                switch (event->type()) {
+                case QEvent::FocusIn:
+                    ++focusInCount;
+                    break;
+                case QEvent::FocusOut:
+                    ++focusOutCount;
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            return QWidget::eventFilter(receiver, event);
+        }
+    };
+
+    auto container1 = new Container;
+    container1->edit->setObjectName("edit1");
+    auto container2 = new Container;
+    container2->edit->setObjectName("edit2");
+
+    QHBoxLayout *layout = new QHBoxLayout;
+    layout->addWidget(container1);
+    layout->addWidget(container2);
+    window.setLayout(layout);
+
+    window.setFocus();
+    window.show();
+    window.activateWindow();
+    if (!QTest::qWaitForWindowExposed(&window) || !QTest::qWaitForWindowActive(&window))
+        QSKIP("Window activation failed");
+
+    // given a widget without focus proxy
+    QVERIFY(window.hasFocus());
+    QCOMPARE(&window, QApplication::focusWidget());
+    QVERIFY(!container1->hasFocus());
+    QVERIFY(!container2->hasFocus());
+    QCOMPARE(container1->focusInCount, 0);
+    QCOMPARE(container1->focusOutCount, 0);
+
+    // setting a (nested) focus proxy moves focus
+    window.setFocusProxy(container1);
+    QCOMPARE(window.focusWidget(), container1->edit);
+    QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(window.hasFocus()); // and redirects hasFocus correctly
+    QVERIFY(container1->edit->hasFocus());
+    QCOMPARE(container1->focusInCount, 1);
+
+    // changing the focus proxy should not move focus
+    window.setFocusProxy(container2);
+    QCOMPARE(window.focusWidget(), container1->edit);
+    QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(!window.hasFocus());
+    QCOMPARE(container1->focusOutCount, 0);
+
+    // but setting focus again does
+    window.setFocus();
+    QCOMPARE(window.focusWidget(), container2->edit);
+    QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(window.hasFocus());
+    QVERIFY(!container1->edit->hasFocus());
+    QVERIFY(container2->edit->hasFocus());
+    QCOMPARE(container1->focusInCount, 1);
+    QCOMPARE(container1->focusOutCount, 1);
+    QCOMPARE(container2->focusInCount, 1);
+    QCOMPARE(container2->focusOutCount, 0);
+
+    // clearing the focus proxy does not move focus
+    window.setFocusProxy(nullptr);
+    QCOMPARE(window.focusWidget(), container2->edit);
+    QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(!window.hasFocus());
+    QCOMPARE(container1->focusInCount, 1);
+    QCOMPARE(container1->focusOutCount, 1);
+    QCOMPARE(container2->focusInCount, 1);
+    QCOMPARE(container2->focusOutCount, 0);
+
+    // but clearing focus does
+    window.focusWidget()->clearFocus();
+    QCOMPARE(QApplication::focusWidget(), nullptr);
+    QVERIFY(!window.hasFocus());
+    QVERIFY(!container2->hasFocus());
+    QVERIFY(!container2->edit->hasFocus());
+    QCOMPARE(container2->focusOutCount, 1);
+}
+
 void tst_QWidget::focusProxyAndInputMethods()
 {
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
@@ -11580,6 +11750,24 @@ void tst_QWidget::receivesLanguageChangeEvent()
     QCOMPARE(topLevelNotShown.languageChangeCount, 1);
     QCOMPARE(childWidget->languageChangeCount, 1);
     QCOMPARE(ww.languageChangeCount, 1);
+}
+
+class DeleteOnCloseEventWidget : public QWidget
+{
+protected:
+    virtual void closeEvent(QCloseEvent *e) override
+    {
+        e->accept();
+        delete this;
+    }
+};
+
+void tst_QWidget::deleteWindowInCloseEvent()
+{
+    // Just checking if closing this widget causes a crash
+    auto widget = new DeleteOnCloseEventWidget;
+    widget->close();
+    QVERIFY(true);
 }
 
 QTEST_MAIN(tst_QWidget)

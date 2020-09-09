@@ -1355,8 +1355,8 @@ QFont::StyleHint QFont::styleHint() const
     \value NoAntialias don't antialias the fonts.
     \value NoSubpixelAntialias avoid subpixel antialiasing on the fonts if possible.
     \value PreferAntialias antialias if possible.
-    \value OpenGLCompatible This style strategy has been deprecated. All fonts are
-           OpenGL-compatible by default.
+    \value OpenGLCompatible This style strategy has been deprecated since Qt 5.15.0. All
+           fonts are OpenGL-compatible by default.
     \value NoFontMerging If the font selected for a certain writing system
            does not contain a character requested to draw, then Qt automatically chooses a similar
            looking font that contains the character. The NoFontMerging flag disables this feature.
@@ -1375,8 +1375,8 @@ QFont::StyleHint QFont::styleHint() const
     \value PreferQuality prefer the best quality font. The font matcher
            will use the nearest standard point size that the font
            supports.
-    \value ForceIntegerMetrics This style strategy has been deprecated. Use \l QFontMetrics to
-           retrieve rounded font metrics.
+    \value ForceIntegerMetrics This style strategy has been deprecated since Qt 5.15.0. Use
+           \l QFontMetrics to retrieve rounded font metrics.
 */
 
 /*!
@@ -2788,8 +2788,10 @@ static const int fast_timeout =  10000; // 10s
 static const int slow_timeout = 300000; //  5m
 #endif // QFONTCACHE_DEBUG
 
-const uint QFontCache::min_cost = 4*1024; // 4mb
-
+#ifndef QFONTCACHE_MIN_COST
+#  define QFONTCACHE_MIN_COST 4*1024 // 4mb
+#endif
+const uint QFontCache::min_cost = QFONTCACHE_MIN_COST;
 Q_GLOBAL_STATIC(QThreadStorage<QFontCache *>, theFontCache)
 
 QFontCache *QFontCache::instance()

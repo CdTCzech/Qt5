@@ -2416,7 +2416,7 @@ static void QT_FASTCALL intermediate_adder(uint *b, uint *end, const Intermediat
 {
 #if defined(QT_COMPILER_SUPPORTS_AVX2)
     extern void QT_FASTCALL intermediate_adder_avx2(uint *b, uint *end, const IntermediateBuffer &intermediate, int offset, int &fx, int fdx);
-    if (qCpuHasFeature(AVX2))
+    if (qCpuHasFeature(ArchHaswell))
         return intermediate_adder_avx2(b, end, intermediate, offset, fx, fdx);
 #endif
 
@@ -2842,15 +2842,15 @@ static void QT_FASTCALL fetchTransformedBilinearARGB32PM_fast_rotate_helper(uint
             fy += fdy;
             ++b;
         }
-        uint *boundedEnd = end; \
-        if (fdx > 0) \
-            boundedEnd = qMin(boundedEnd, b + (max_fx - fx) / fdx); \
-        else if (fdx < 0) \
-            boundedEnd = qMin(boundedEnd, b + (min_fx - fx) / fdx); \
-        if (fdy > 0) \
-            boundedEnd = qMin(boundedEnd, b + (max_fy - fy) / fdy); \
-        else if (fdy < 0) \
-            boundedEnd = qMin(boundedEnd, b + (min_fy - fy) / fdy); \
+        uint *boundedEnd = end;
+        if (fdx > 0)
+            boundedEnd = qMin(boundedEnd, b + (max_fx - fx) / fdx);
+        else if (fdx < 0)
+            boundedEnd = qMin(boundedEnd, b + (min_fx - fx) / fdx);
+        if (fdy > 0)
+            boundedEnd = qMin(boundedEnd, b + (max_fy - fy) / fdy);
+        else if (fdy < 0)
+            boundedEnd = qMin(boundedEnd, b + (min_fy - fy) / fdy);
 
         // until boundedEnd we can now have a fast middle part without boundary checks
 #if defined(__SSE2__)

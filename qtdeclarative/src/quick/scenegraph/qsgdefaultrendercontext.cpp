@@ -377,7 +377,7 @@ QString QSGDefaultRenderContext::fontKey(const QRawFont &font)
 {
     QFontEngine *fe = QRawFontPrivate::get(font)->fontEngine;
     if (!fe->faceId().filename.isEmpty()) {
-        QByteArray keyName = fe->faceId().filename;
+        QByteArray keyName = fe->faceId().filename + ' ' + QByteArray::number(fe->faceId().index);
         if (font.style() != QFont::StyleNormal)
             keyName += QByteArray(" I");
         if (font.weight() != QFont::Normal)
@@ -428,6 +428,14 @@ bool QSGDefaultRenderContext::separateIndexBuffer() const
     static const bool isWebGL = (qGuiApp->platformName().compare(QLatin1String("webgl")) == 0
                                   || qGuiApp->platformName().compare(QLatin1String("wasm")) == 0);
     return isWebGL;
+}
+
+void QSGDefaultRenderContext::preprocess()
+{
+    for (auto it = m_glyphCaches.begin(); it != m_glyphCaches.end(); ++it) {
+        it.value()->processPendingGlyphs();
+        it.value()->update();
+    }
 }
 
 QSGDistanceFieldGlyphCache *QSGDefaultRenderContext::distanceFieldGlyphCache(const QRawFont &font)

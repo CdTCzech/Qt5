@@ -186,7 +186,7 @@ QDate QCalendarDayValidator::applyToDate(QDate date, QCalendar cal) const
     auto parts = cal.partsFromDate(date);
     if (!parts.isValid())
         return QDate();
-    parts.day = qMin(qMax(1, m_day), cal.daysInMonth(parts.year, parts.month));
+    parts.day = qMin(qMax(1, m_day), cal.daysInMonth(parts.month, parts.year));
     return cal.dateFromParts(parts);
 }
 
@@ -292,7 +292,7 @@ QDate QCalendarMonthValidator::applyToDate(QDate date, QCalendar cal) const
     if (!parts.isValid())
         return QDate();
     parts.month = qMin(qMax(1, m_month), cal.monthsInYear(parts.year));
-    parts.day = qMin(parts.day, cal.daysInMonth(parts.year, m_month)); // m_month or parts.month ?
+    parts.day = qMin(parts.day, cal.daysInMonth(m_month, parts.year)); // m_month or parts.month ?
     return cal.dateFromParts(parts);
 }
 
@@ -401,7 +401,7 @@ QDate QCalendarYearValidator::applyToDate(QDate date, QCalendar cal) const
         return QDate();
     // This widget does not support negative years (some calendars may support)
     parts.year = qMax(1, m_year);
-    parts.day = qMin(parts.day, cal.daysInMonth(parts.year, parts.month));
+    parts.day = qMin(parts.day, cal.daysInMonth(parts.month, parts.year));
     return cal.dateFromParts(parts);
 }
 
@@ -860,37 +860,22 @@ class QCalendarModel : public QAbstractTableModel
 public:
     QCalendarModel(QObject *parent = nullptr);
 
-    int rowCount(const QModelIndex &) const override
-        { return RowCount + m_firstRow; }
-    int columnCount(const QModelIndex &) const override
-        { return ColumnCount + m_firstColumn; }
+    int rowCount(const QModelIndex &parent) const override
+    {
+        if (parent.isValid())
+            return 0;
+        return RowCount + m_firstRow;
+    }
+
+    int columnCount(const QModelIndex &parent) const override
+    {
+        if (parent.isValid())
+            return 0;
+        return ColumnCount + m_firstColumn;
+    }
+
     QVariant data(const QModelIndex &index, int role) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
-
-    bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginInsertRows(parent, row, row + count - 1);
-        endInsertRows();
-        return true;
-    }
-    bool insertColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginInsertColumns(parent, column, column + count - 1);
-        endInsertColumns();
-        return true;
-    }
-    bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginRemoveRows(parent, row, row + count - 1);
-        endRemoveRows();
-        return true;
-    }
-    bool removeColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginRemoveColumns(parent, column, column + count - 1);
-        endRemoveColumns();
-        return true;
-    }
 
     void showMonth(int year, int month);
     void setDate(QDate d);
@@ -1303,11 +1288,13 @@ void QCalendarModel::setHorizontalHeaderFormat(QCalendarWidget::HorizontalHeader
     int oldFormat = m_horizontalHeaderFormat;
     m_horizontalHeaderFormat = format;
     if (oldFormat == QCalendarWidget::NoHorizontalHeader) {
+        beginInsertRows(QModelIndex(), 0, 0);
         m_firstRow = 1;
-        insertRow(0);
+        endInsertRows();
     } else if (m_horizontalHeaderFormat == QCalendarWidget::NoHorizontalHeader) {
+        beginRemoveRows(QModelIndex(), 0, 0);
         m_firstRow = 0;
-        removeRow(0);
+        endRemoveRows();
     }
     internalUpdate();
 }
@@ -1338,11 +1325,13 @@ void QCalendarModel::setWeekNumbersShown(bool show)
 
     m_weekNumbersShown = show;
     if (show) {
+        beginInsertColumns(QModelIndex(), 0, 0);
         m_firstColumn = 1;
-        insertColumn(0);
+        endInsertColumns();
     } else {
+        beginRemoveColumns(QModelIndex(), 0, 0);
         m_firstColumn = 0;
-        removeColumn(0);
+        endRemoveColumns();
     }
     internalUpdate();
 }
@@ -1397,7 +1386,7 @@ QModelIndex QCalendarView::moveCursor(CursorAction cursorAction, Qt::KeyboardMod
         case QAbstractItemView::MoveEnd: {
             auto parts = cal.partsFromDate(currentDate);
             if (parts.isValid()) {
-                parts.day = cal.daysInMonth(parts.year, parts.month);
+                parts.day = cal.daysInMonth(parts.month, parts.year);
                 currentDate = cal.dateFromParts(parts);
             }
         }
@@ -2395,7 +2384,7 @@ void QCalendarWidget::setCurrentPage(int year, int month)
     QDate currentDate = d->getCurrentDate();
     QCalendar cal = d->m_model->m_calendar;
     int day = currentDate.day(cal);
-    int daysInMonths = cal.daysInMonth(year, month);
+    int daysInMonths = cal.daysInMonth(month, year);
     if (day > daysInMonths)
         day = daysInMonths;
 

@@ -3684,11 +3684,14 @@ void tst_QFile::moveToTrash_data()
     // success cases
     {
         QTemporaryFile temp;
-        QVERIFY(temp.open());
+        if (!temp.open())
+            QSKIP("Failed to create temporary file!");
         QTest::newRow("temporary file") << temp.fileName() << true << true;
     }
     {
         QTemporaryDir tempDir;
+        if (!tempDir.isValid())
+            QSKIP("Failed to create temporary directory!");
         tempDir.setAutoRemove(false);
         QTest::newRow("temporary dir")
             << tempDir.path() + QLatin1Char('/')
@@ -3696,10 +3699,13 @@ void tst_QFile::moveToTrash_data()
     }
     {
         QTemporaryDir homeDir(QDir::homePath() + QLatin1String("/XXXXXX"));
-        homeDir.setAutoRemove(false);
+        if (!homeDir.isValid())
+            QSKIP("Failed to create temporary directory in $HOME!");
         QTemporaryFile homeFile(homeDir.path()
                               + QLatin1String("/tst_qfile-XXXXXX"));
-        homeFile.open();
+        if (!homeFile.open())
+            QSKIP("Failed to create temporary file in $HOME");
+        homeDir.setAutoRemove(false);
         QTest::newRow("home file")
             << homeFile.fileName()
             << true << true;
@@ -3720,13 +3726,6 @@ void tst_QFile::moveToTrash()
     QFETCH(QString, source);
     QFETCH(bool, create);
     QFETCH(bool, result);
-
-    /* This test makes assumptions about the file system layout
-       which might be wrong - moveToTrash may fail if the file lives
-       on a file system that is different from the home file system, and
-       has no .Trash directory.
-    */
-    const bool mayFail = QStorageInfo(source) != QStorageInfo(QDir::home());
 
 #if defined(Q_OS_WINRT)
     QSKIP("WinRT does not have a trash", SkipAll);
@@ -3756,9 +3755,20 @@ void tst_QFile::moveToTrash()
             sourceFile.remove();
         }
     };
+
+    ensureFile(source, create);
+
+    /* This test makes assumptions about the file system layout
+       which might be wrong - moveToTrash may fail if the file lives
+       on a file system that is different from the home file system, and
+       has no .Trash directory.
+    */
+    const QStorageInfo sourceStorage(source);
+    const bool mayFail = sourceStorage.isValid()
+                      && QStorageInfo(source) != QStorageInfo(QDir::home());
+
     // non-static version
     {
-        ensureFile(source, create);
         QFile sourceFile(source);
         const bool success = sourceFile.moveToTrash();
 

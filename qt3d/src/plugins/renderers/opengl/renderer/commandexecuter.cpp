@@ -261,7 +261,7 @@ QJsonObject parameterPackToJson(const Render::OpenGL::ShaderParameterPack &pack)
     obj.insert(QLatin1String("uniforms"), uniformsArray);
 
     QJsonArray texturesArray;
-    const QVector<Render::OpenGL::ShaderParameterPack::NamedResource> &textures = pack.textures();
+    const std::vector<Render::OpenGL::ShaderParameterPack::NamedResource> &textures = pack.textures();
     for (const auto & texture : textures) {
         QJsonObject textureObj;
         textureObj.insert(QLatin1String("name"), Render::StringToInt::lookupString(texture.glslNameId));
@@ -270,7 +270,7 @@ QJsonObject parameterPackToJson(const Render::OpenGL::ShaderParameterPack &pack)
     }
     obj.insert(QLatin1String("textures"), texturesArray);
 
-    const QVector<Render::OpenGL::BlockToUBO> &ubos = pack.uniformBuffers();
+    const std::vector<Render::OpenGL::BlockToUBO> &ubos = pack.uniformBuffers();
     QJsonArray ubosArray;
     for (const auto &ubo : ubos) {
         QJsonObject uboObj;
@@ -281,7 +281,7 @@ QJsonObject parameterPackToJson(const Render::OpenGL::ShaderParameterPack &pack)
     }
     obj.insert(QLatin1String("ubos"), ubosArray);
 
-    const QVector<Render::OpenGL::BlockToSSBO> &ssbos = pack.shaderStorageBuffers();
+    const std::vector<Render::OpenGL::BlockToSSBO> &ssbos = pack.shaderStorageBuffers();
     QJsonArray ssbosArray;
     for (const auto &ssbo : ssbos) {
         QJsonObject ssboObj;
@@ -346,7 +346,7 @@ void CommandExecuter::performAsynchronousCommandExecution(const QVector<Render::
                 viewObj.insert(QLatin1String("clearStencilValue"), v->clearStencilValue());
 
                 QJsonArray renderCommandsArray;
-                for (Render::OpenGL::RenderCommand &c : v->commands()) {
+                v->forEachCommand([&] (Render::OpenGL::RenderCommand &c) {
                     QJsonObject commandObj;
                     Render::NodeManagers *nodeManagers = m_renderer->nodeManagers();
                     commandObj.insert(QLatin1String("shader"), typeToJsonValue(QVariant::fromValue(c.m_shaderId)));
@@ -357,7 +357,7 @@ void CommandExecuter::performAsynchronousCommandExecution(const QVector<Render::
                     commandObj.insert(QLatin1String("shaderParameterPack"), parameterPackToJson(c.m_parameterPack));
 
                     renderCommandsArray.push_back(commandObj);
-                }
+                });
                 viewObj.insert(QLatin1String("commands"), renderCommandsArray);
                 viewArray.push_back(viewObj);
             }

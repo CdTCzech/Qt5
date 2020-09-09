@@ -1,5 +1,4 @@
 Item {
-
     function test() {
         //// The following if blocks should NOT HAVE braces
         // Single branch, no braces
@@ -24,7 +23,6 @@ Item {
             console.log("bar");
         else
             console.log("baz");
-
         //// The following if blocks should HAVE braces
         // Single branch, braces
         if (true) {

@@ -286,6 +286,7 @@ RenderWidgetHostViewQt::RenderWidgetHostViewQt(content::RenderWidgetHost *widget
     , m_adapterClient(0)
     , m_imeInProgress(false)
     , m_receivedEmptyImeEvent(false)
+    , m_isMouseLocked(false)
     , m_imState(0)
     , m_anchorPositionWithinSelection(-1)
     , m_cursorPositionWithinSelection(-1)
@@ -425,14 +426,14 @@ gfx::NativeViewAccessible RenderWidgetHostViewQt::GetNativeViewAccessible()
 content::BrowserAccessibilityManager* RenderWidgetHostViewQt::CreateBrowserAccessibilityManager(content::BrowserAccessibilityDelegate* delegate, bool for_root_frame)
 {
     Q_UNUSED(for_root_frame); // FIXME
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
     return new content::BrowserAccessibilityManagerQt(
         m_adapterClient->accessibilityParentObject(),
         content::BrowserAccessibilityManagerQt::GetEmptyDocument(),
         delegate);
 #else
     return 0;
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)
 }
 
 // Set focus to the associated View component.
@@ -446,6 +447,11 @@ void RenderWidgetHostViewQt::Focus()
 bool RenderWidgetHostViewQt::HasFocus()
 {
     return m_delegate->hasKeyboardFocus();
+}
+
+bool RenderWidgetHostViewQt::IsMouseLocked()
+{
+    return m_isMouseLocked;
 }
 
 bool RenderWidgetHostViewQt::IsSurfaceAvailableForCopy()
@@ -520,6 +526,7 @@ bool RenderWidgetHostViewQt::LockMouse(bool)
 {
     m_previousMousePosition = QCursor::pos();
     m_delegate->lockMouse();
+    m_isMouseLocked = true;
     qApp->setOverrideCursor(Qt::BlankCursor);
     return true;
 }
@@ -528,6 +535,7 @@ void RenderWidgetHostViewQt::UnlockMouse()
 {
     m_delegate->unlockMouse();
     qApp->restoreOverrideCursor();
+    m_isMouseLocked = false;
     host()->LostMouseLock();
 }
 
@@ -1162,8 +1170,12 @@ bool RenderWidgetHostViewQt::forwardEvent(QEvent *event)
     case QEvent::InputMethodQuery:
         handleInputMethodQueryEvent(static_cast<QInputMethodQueryEvent*>(event));
         break;
-    case QEvent::HoverLeave:
     case QEvent::Leave:
+#ifdef Q_OS_WIN
+        if (m_mouseButtonPressed > 0)
+            return false;
+#endif
+    case QEvent::HoverLeave:
         host()->ForwardMouseEvent(WebEventFactory::toWebMouseEvent(event));
         break;
     default:
@@ -1276,6 +1288,11 @@ bool RenderWidgetHostViewQt::IsPopup() const
 
 void RenderWidgetHostViewQt::handleMouseEvent(QMouseEvent* event)
 {
+    if (event->type() == QEvent::MouseButtonPress)
+        m_mouseButtonPressed++;
+    if (event->type() == QEvent::MouseButtonRelease)
+        m_mouseButtonPressed--;
+
     // Don't forward mouse events synthesized by the system, which are caused by genuine touch
     // events. Chromium would then process for e.g. a mouse click handler twice, once due to the
     // system synthesized mouse event, and another time due to a touch-to-gesture-to-mouse
@@ -1725,7 +1742,7 @@ void RenderWidgetHostViewQt::handlePointerEvent(T *event)
     blink::WebMouseEvent webEvent = WebEventFactory::toWebMouseEvent(event);
     if ((webEvent.GetType() == blink::WebInputEvent::kMouseDown || webEvent.GetType() == blink::WebInputEvent::kMouseUp)
             && webEvent.button == blink::WebMouseEvent::Button::kNoButton) {
-        // Blink can only handle the 3 main mouse-buttons and may assert when processing mouse-down for no button.
+        // Blink can only handle the 5 main mouse-buttons and may assert when processing mouse-down for no button.
         LOG(INFO) << "Unhandled mouse button";
         return;
     }
@@ -1742,6 +1759,9 @@ void RenderWidgetHostViewQt::handlePointerEvent(T *event)
         m_clickHelper.lastPressButton = event->button();
         m_clickHelper.lastPressPosition = QPointF(event->pos()).toPoint();
     }
+
+    if (webEvent.GetType() == blink::WebInputEvent::kMouseUp)
+        webEvent.click_count = m_clickHelper.clickCounter;
 
     webEvent.movement_x = event->globalX() - m_previousMousePosition.x();
     webEvent.movement_y = event->globalY() - m_previousMousePosition.y();
@@ -1784,6 +1804,8 @@ void RenderWidgetHostViewQt::handleFocusEvent(QFocusEvent *ev)
         else if (ev->reason() == Qt::BacktabFocusReason)
             viewHost->SetInitialFocus(true);
         ev->accept();
+
+        m_adapterClient->webContentsAdapter()->handlePendingMouseLockPermission();
     } else if (ev->lostFocus()) {
         host()->SetActive(false);
         host()->LostFocus();

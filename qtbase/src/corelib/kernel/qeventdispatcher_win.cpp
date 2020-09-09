@@ -277,9 +277,13 @@ LRESULT QT_WIN_CALLBACK qt_GetMessageHook(int code, WPARAM wp, LPARAM lp)
     Q_ASSERT(q != 0);
     QEventDispatcherWin32Private *d = q->d_func();
     MSG *msg = reinterpret_cast<MSG *>(lp);
+    // Windows unexpectedly passes PM_NOYIELD flag to the hook procedure,
+    // if ::PeekMessage(..., PM_REMOVE | PM_NOYIELD) is called from the event loop.
+    // So, retrieve 'removed' tag as a bit field.
+    const bool messageRemoved = (wp & PM_REMOVE) != 0;
 
     if (msg->hwnd == d->internalHwnd && msg->message == WM_QT_SENDPOSTEDEVENTS
-        && wp == PM_REMOVE && d->sendPostedEventsTimerId == 0) {
+        && messageRemoved && d->sendPostedEventsTimerId == 0) {
         // Start a timer to deliver posted events when the message queue is emptied.
         d->sendPostedEventsTimerId = SetTimer(d->internalHwnd, SendPostedEventsTimerId,
                                               USER_TIMER_MINIMUM, NULL);
@@ -523,6 +527,7 @@ bool QEventDispatcherWin32::processEvents(QEventLoop::ProcessEventsFlags flags)
     // QCoreApplication::sendPostedEvents() takes care about recursions.
     sendPostedEvents();
 
+    auto threadData = d->threadData.loadRelaxed();
     bool canWait;
     bool retVal = false;
     do {
@@ -613,7 +618,8 @@ bool QEventDispatcherWin32::processEvents(QEventLoop::ProcessEventsFlags flags)
         // still nothing - wait for message or signalled objects
         canWait = (!retVal
                    && !d->interrupt.loadRelaxed()
-                   && (flags & QEventLoop::WaitForMoreEvents));
+                   && flags.testFlag(QEventLoop::WaitForMoreEvents)
+                   && threadData->canWaitLocked());
         if (canWait) {
             emit aboutToBlock();
             waitRet = MsgWaitForMultipleObjectsEx(nCount, pHandles, INFINITE, QS_ALLINPUT, MWMO_ALERTABLE | MWMO_INPUTAVAILABLE);

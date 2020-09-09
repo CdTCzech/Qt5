@@ -91,7 +91,10 @@ class Q_WEBENGINECORE_PRIVATE_EXPORT CookieMonsterDelegateQt : public base::RefC
 
     network::mojom::CookieManagerPtr m_mojoCookieManager;
     std::unique_ptr<network::mojom::CookieChangeListener> m_listener;
+    std::unique_ptr<network::mojom::CookieRemoteAccessFilter> m_filter;
     mojo::Receiver<network::mojom::CookieChangeListener> m_receiver;
+    mojo::Receiver<network::mojom::CookieRemoteAccessFilter> m_filterReceiver;
+    bool m_hasFilter;
 public:
     CookieMonsterDelegateQt();
     ~CookieMonsterDelegateQt();
@@ -107,6 +110,7 @@ public:
     void setClient(QWebEngineCookieStore *client);
     void setMojoCookieManager(network::mojom::CookieManagerPtrInfo cookie_manager_info);
     void unsetMojoCookieManager();
+    void setHasFilter(bool b);
 
     bool canSetCookie(const QUrl &firstPartyUrl, const QByteArray &cookieLine, const QUrl &url) const;
     bool canGetCookies(const QUrl &firstPartyUrl, const QUrl &url) const;
@@ -115,8 +119,7 @@ public:
     void OnCookieChanged(const net::CookieChangeInfo &change);
 
 private:
-    void GetAllCookiesCallbackOnUIThread(qint64 callbackId, const std::vector<net::CanonicalCookie> &cookies);
-    void GetAllCookiesResultOnUIThread(qint64 callbackId, const QByteArray &cookies);
+    void GetAllCookiesCallbackOnUIThread(qint64 callbackId, const net::CookieList &cookies);
     void SetCookieCallbackOnUIThread(qint64 callbackId, net::CanonicalCookie::CookieInclusionStatus status);
     void DeleteCookiesCallbackOnUIThread(qint64 callbackId, uint numCookies);
 };

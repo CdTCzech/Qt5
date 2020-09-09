@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -735,7 +735,7 @@ void tst_Selftests::doRunSubTest(QString const& subdir, QStringList const& logge
             QByteArray &actual = actualOutputs[0];
 #ifndef Q_OS_WIN
              // Remove digits of times to match the expected file.
-            const QLatin1String timePattern("Function time:");
+            const QByteArray timePattern("Function time:");
             int timePos = actual.indexOf(timePattern);
             if (timePos >= 0) {
                 timePos += timePattern.size();
@@ -938,6 +938,14 @@ bool tst_Selftests::compareLine(const QString &logger, const QString &subdir,
           return false;
         }
         return true;
+    }
+
+    if (EmulationDetector::isRunningArmOnX86() && subdir == QLatin1String("float")) {
+        // QEMU cheats at qfloat16, so outputs it as if it were a float.
+        if (actualLine.endsWith(QLatin1String("Actual   (operandLeft) : 0.001"))
+            && expectedLine.endsWith(QLatin1String("Actual   (operandLeft) : 0.000999"))) {
+            return true;
+        }
     }
 
     *errorMessage = msgMismatch(actualLine, expectedLine);

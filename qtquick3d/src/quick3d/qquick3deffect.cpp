@@ -221,7 +221,7 @@ QQmlListProperty<QQuick3DShaderUtilsRenderPass> QQuick3DEffect::passes()
                                                       QQuick3DEffect::qmlAppendPass,
                                                       QQuick3DEffect::qmlPassCount,
                                                       QQuick3DEffect::qmlPassAt,
-                                                      nullptr);
+                                                      QQuick3DEffect::qmlPassClear);
 }
 
 QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *node)
@@ -235,8 +235,8 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
             break;
     }
 
-    static const auto addUniform = [](const QMetaProperty &property, QByteArray &uniforms) {
-        uniforms += QByteArray("uniform ") + uniformTypeName(property.type()) + " " + property.name() + ";\n";
+    static const auto addUniform = [](QVariant::Type propType, const char *propName, QByteArray &uniforms) {
+        uniforms += QByteArray("uniform ") + uniformTypeName(propType) + " " + propName + ";\n";
     };
 
     const auto &renderContext
@@ -258,20 +258,37 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
         // Properties -> uniforms
         QByteArray uniforms;
         const int propCount = metaObject()->propertyCount();
-        const int propOffset = metaObject()->propertyOffset();
+        int propOffset = metaObject()->propertyOffset();
+
+        // Effect can have multilayered inheritance structure, so find the actual propOffset
+        const QMetaObject *superClass = metaObject()->superClass();
+        while (superClass && qstrcmp(superClass->className(), "QQuick3DEffect") != 0)  {
+            propOffset = superClass->propertyOffset();
+            superClass = superClass->superClass();
+        }
+
         QVector<QMetaProperty> textureProperties; // We'll deal with these later
         for (int i = propOffset; i != propCount; ++i) {
             const auto property = metaObject()->property(i);
             if (Q_UNLIKELY(!property.isValid()))
                 continue;
 
-            if (property.type() == QVariant::UserType) {
+            QVariant::Type propType = property.type();
+            QVariant propValue = property.read(this);
+            if (static_cast<QMetaType::Type>(propType) == QMetaType::QVariant)
+                propType = propValue.type();
+
+            if (propType == QVariant::UserType) {
                 if (property.userType() == qMetaTypeId<QQuick3DShaderUtilsTextureInput *>())
                     textureProperties.push_back(property);
+            } else if (static_cast<QMetaType::Type>(propType) == QMetaType::QObjectStar) {
+                QObject *obj = qobject_cast<QQuick3DShaderUtilsTextureInput *>(propValue.value<QObject *>());
+                if (obj)
+                    textureProperties.push_back(property);
             } else {
-                const auto type = uniformType(property.type());
+                const auto type = uniformType(propType);
                 if (type != QSSGRenderShaderDataType::Unknown) {
-                    addUniform(property, uniforms);
+                    addUniform(propType, property.name(), uniforms);
                     effectNode->properties.push_back({ property.name(), property.read(this), type, i});
                     // Track the property changes
                     if (property.hasNotifySignal() && propertyDirtyMethod.isValid())
@@ -318,13 +335,13 @@ QSSGRenderGraphObject *QQuick3DEffect::updateSpatialNode(QSSGRenderGraphObject *
                 // Build up shader code
                 QByteArray shaderPath;
                 if (sharedShader)
-                    shared += QSSGShaderUtils::resolveShader(sharedShader->shader, shaderPath);
+                    shared += QSSGShaderUtils::resolveShader(sharedShader->shader, shaderPath, this);
                 if (vertShader)
-                    vertex = QSSGShaderUtils::resolveShader(vertShader->shader, shaderPath);
+                    vertex = QSSGShaderUtils::resolveShader(vertShader->shader, shaderPath, this);
                 if (fragShader)
-                    fragment = QSSGShaderUtils::resolveShader(fragShader->shader, shaderPath);
+                    fragment = QSSGShaderUtils::resolveShader(fragShader->shader, shaderPath, this);
                 if (geomShader)
-                    geometry = QSSGShaderUtils::resolveShader(geomShader->shader, shaderPath);
+                    geometry = QSSGShaderUtils::resolveShader(geomShader->shader, shaderPath, this);
 
 
                 shaderCode = QSSGShaderUtils::mergeShaderCode(shared, uniforms, textureData, vertex, geometry, fragment);
@@ -438,6 +455,12 @@ int QQuick3DEffect::qmlPassCount(QQmlListProperty<QQuick3DShaderUtilsRenderPass>
 {
     QQuick3DEffect *that = qobject_cast<QQuick3DEffect *>(list->object);
     return that->m_passes.count();
+}
+
+void QQuick3DEffect::qmlPassClear(QQmlListProperty<QQuick3DShaderUtilsRenderPass> *list)
+{
+    QQuick3DEffect *that = qobject_cast<QQuick3DEffect *>(list->object);
+    that->m_passes.clear();
 }
 
 void QQuick3DEffect::setDynamicTextureMap(QQuick3DTexture *textureMap, const QByteArray &name)

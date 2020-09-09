@@ -51,6 +51,15 @@ private Q_SLOTS:
     void testIfBlocks();
 
     void testReadOnlyProps();
+    void testVerbatimStrings();
+    void testLargeBindings();
+    void testInlineComponents();
+
+    void testQtbug85003();
+
+    void testNestedIf();
+
+    void testNestedFunctions();
 
 #if !defined(QTEST_CROSS_COMPILED) // sources not available when cross compiled
     void testExample();
@@ -217,6 +226,30 @@ void TestQmlformat::testReadOnlyProps()
     QCOMPARE(runQmlformat(testFile("readOnlyProps.qml"), false, true), readTestFile("readOnlyProps.formatted.qml"));
 }
 
+void TestQmlformat::testVerbatimStrings()
+{
+    QCOMPARE(runQmlformat(testFile("verbatimString.qml"), false, true),
+             readTestFile("verbatimString.formatted.qml"));
+}
+
+void TestQmlformat::testInlineComponents()
+{
+    QCOMPARE(runQmlformat(testFile("inlineComponents.qml"), false, true),
+             readTestFile("inlineComponents.formatted.qml"));
+}
+
+void TestQmlformat::testLargeBindings()
+{
+    QCOMPARE(runQmlformat(testFile("largeBindings.qml"), false, true),
+             readTestFile("largeBindings.formatted.qml"));
+}
+
+void TestQmlformat::testNestedIf()
+{
+    QCOMPARE(runQmlformat(testFile("nestedIf.qml"), false, true),
+             readTestFile("nestedIf.formatted.qml"));
+}
+
 void TestQmlformat::testLineEndings()
 {
     // macos
@@ -232,6 +265,18 @@ void TestQmlformat::testLineEndings()
     const QString unixContents = runQmlformat(testFile("Example1.formatted.qml"), false, true, "unix");
     QVERIFY(unixContents.contains("\n"));
     QVERIFY(!unixContents.contains("\r"));
+}
+
+void TestQmlformat::testQtbug85003()
+{
+    QCOMPARE(runQmlformat(testFile("QtBug85003.qml"), false, true),
+             readTestFile("QtBug85003.formatted.qml"));
+}
+
+void TestQmlformat::testNestedFunctions()
+{
+    QCOMPARE(runQmlformat(testFile("nestedFunctions.qml"), false, true),
+             readTestFile("nestedFunctions.formatted.qml"));
 }
 
 #if !defined(QTEST_CROSS_COMPILED) // sources not available when cross compiled

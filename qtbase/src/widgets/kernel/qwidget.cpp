@@ -704,8 +704,7 @@ void QWidget::setAutoFillBackground(bool enabled)
     is no need to write double-buffering code in paintEvent() to avoid
     flicker.
 
-    Since Qt 4.1, the Qt::WA_ContentsPropagated widget attribute has been
-    deprecated. Instead, the contents of parent widgets are propagated by
+    Since Qt 4.1, the contents of parent widgets are propagated by
     default to each of their children as long as Qt::WA_PaintOnScreen is not
     set. Custom widgets can be written to take advantage of this feature by
     updating irregular regions (to create non-rectangular child widgets), or
@@ -6178,7 +6177,8 @@ void QWidget::setWindowRole(const QString &role)
 
     setFocusProxy() sets the widget which will actually get focus when
     "this widget" gets it. If there is a focus proxy, setFocus() and
-    hasFocus() operate on the focus proxy.
+    hasFocus() operate on the focus proxy. If "this widget" is the focus
+    widget, then setFocusProxy() moves focus to the new focus proxy.
 
     \sa focusProxy()
 */
@@ -6196,18 +6196,13 @@ void QWidget::setFocusProxy(QWidget * w)
         }
     }
 
-    QWidget *oldDeepestFocusProxy = d_func()->deepestFocusProxy();
-    if (!oldDeepestFocusProxy)
-        oldDeepestFocusProxy = this;
-    const bool changingAppFocusWidget = (QApplicationPrivate::focus_widget == oldDeepestFocusProxy);
+    const bool moveFocusToProxy = (QApplicationPrivate::focus_widget == this);
 
     d->createExtra();
     d->extra->focus_proxy = w;
 
-    if (changingAppFocusWidget) {
-        QWidget *newDeepestFocusProxy = d_func()->deepestFocusProxy();
-        QApplicationPrivate::setFocusWidget(newDeepestFocusProxy ? newDeepestFocusProxy : this, Qt::NoFocusReason);
-    }
+    if (moveFocusToProxy)
+        setFocus(Qt::OtherFocusReason);
 }
 
 
@@ -6341,11 +6336,6 @@ void QWidget::setFocus(Qt::FocusReason reason)
 
         QApplicationPrivate::setFocusWidget(f, reason);
 #ifndef QT_NO_ACCESSIBILITY
-# ifdef Q_OS_WIN
-        // The negation of the condition in setFocus_sys
-        if (!(testAttribute(Qt::WA_WState_Created) && window()->windowType() != Qt::Popup && internalWinId()))
-            //setFocusWidget will already post a focus event for us (that the AT client receives) on Windows
-# endif
         // menus update the focus manually and this would create bogus events
         if (!(f->inherits("QMenuBar") || f->inherits("QMenu") || f->inherits("QMenuItem")))
         {
@@ -8136,9 +8126,11 @@ void QWidgetPrivate::setVisible(bool visible)
         if (!q->isWindow() && q->parentWidget()) // && !d->getOpaqueRegion().isEmpty())
             q->parentWidget()->d_func()->setDirtyOpaqueRegion();
 
-        q->setAttribute(Qt::WA_WState_Hidden);
-        if (q->testAttribute(Qt::WA_WState_Created))
-            hide_helper();
+        if (!q->testAttribute(Qt::WA_WState_Hidden)) {
+            q->setAttribute(Qt::WA_WState_Hidden);
+            if (q->testAttribute(Qt::WA_WState_Created))
+                hide_helper();
+        }
 
         // invalidate layout similar to updateGeometry()
         if (!q->isWindow() && q->parentWidget()) {
@@ -11157,7 +11149,7 @@ bool QWidget::testAttribute_helper(Qt::WidgetAttribute attribute) const
 
   \warning Changing this property from opaque to transparent might issue a
   paint event that needs to be processed before the window is displayed
-  correctly. This affects mainly the use of QPixmap::grabWindow(). Also note
+  correctly. This affects mainly the use of QScreen::grabWindow(). Also note
   that semi-transparent windows update and resize significantly slower than
   opaque windows.
 
@@ -11720,7 +11712,7 @@ void QWidgetPrivate::stackUnder_sys(QWidget*)
     \note This function is available with widgets that derive from user
     interface descriptions created using \l{uic}.
 
-    \sa {Using a Designer UI File in Your Application}
+    \sa {Using a Designer UI File in Your C++ Application}
 */
 
 QRect QWidgetPrivate::frameStrut() const

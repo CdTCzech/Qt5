@@ -205,12 +205,9 @@ void WebContentsDelegateQt::NavigationStateChanged(content::WebContents* source,
         }
     }
 
-    // NavigationStateChanged gets called with INVALIDATE_TYPE_TAB by AudioStateProvider::Notify,
-    // whenever an audio sound gets played or stopped, this is the only way to actually figure out
-    // if there was a recently played audio sound.
     // Make sure to only emit the signal when loading isn't in progress, because it causes multiple
     // false signals to be emitted.
-    if ((changed_flags & content::INVALIDATE_TYPE_TAB) && !(changed_flags & content::INVALIDATE_TYPE_LOAD)) {
+    if ((changed_flags & content::INVALIDATE_TYPE_AUDIO) && !(changed_flags & content::INVALIDATE_TYPE_LOAD)) {
         m_viewClient->recentlyAudibleChanged(source->IsCurrentlyAudible());
     }
 }
@@ -251,8 +248,9 @@ void WebContentsDelegateQt::AddNewContents(content::WebContents* source, std::un
 
 void WebContentsDelegateQt::CloseContents(content::WebContents *source)
 {
-    m_viewClient->close();
     GetJavaScriptDialogManager(source)->CancelDialogs(source, /* whatever?: */false);
+    // Must be the last call because close() might trigger the destruction of this object.
+    m_viewClient->close();
 }
 
 void WebContentsDelegateQt::LoadProgressChanged(double progress)
@@ -655,7 +653,7 @@ void WebContentsDelegateQt::RequestToLockMouse(content::WebContents *web_content
     if (last_unlocked_by_target)
         web_contents->GotResponseToLockMouseRequest(true);
     else
-        m_viewClient->runMouseLockPermissionRequest(toQt(web_contents->GetVisibleURL()));
+        m_viewClient->runMouseLockPermissionRequest(toQt(web_contents->GetLastCommittedURL().GetOrigin()));
 }
 
 void WebContentsDelegateQt::overrideWebPreferences(content::WebContents *webContents, content::WebPreferences *webPreferences)
@@ -807,6 +805,15 @@ void WebContentsDelegateQt::ContentsZoomChange(bool zoom_in)
         adapter->setZoomFactor(adapter->currentZoomFactor() + 0.1f);
     else
         adapter->setZoomFactor(adapter->currentZoomFactor() - 0.1f);
+}
+
+bool WebContentsDelegateQt::ShouldNavigateOnBackForwardMouseButtons()
+{
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    return false;
+#else
+    return true;
+#endif
 }
 
 FaviconManager *WebContentsDelegateQt::faviconManager()

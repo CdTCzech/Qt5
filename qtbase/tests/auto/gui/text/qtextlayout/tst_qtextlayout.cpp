@@ -142,6 +142,7 @@ private slots:
     void koreanWordWrap();
     void tooManyDirectionalCharctersCrash_qtbug77819();
     void softHyphens();
+    void min_maximumWidth();
 
 private:
     QFont testFont;
@@ -1999,6 +2000,9 @@ void tst_QTextLayout::textWidthVsWIdth()
     layout.setCacheEnabled(true);
     QTextOption opt;
     opt.setWrapMode(QTextOption::WrapAnywhere);
+#if defined(Q_OS_WIN)
+    layout.setFont(QFont(QString::fromLatin1("Arial")));
+#endif
     layout.setTextOption(opt);
     layout.setText(QString::fromLatin1(
                        "g++ -c -m64 -pipe -g -fvisibility=hidden -fvisibility-inlines-hidden -Wall -W -D_REENTRANT -fPIC -DCORE_LIBRARY -DIDE_LIBRARY_BASENAME=\"lib\" -DWITH_TESTS "
@@ -2015,6 +2019,21 @@ void tst_QTextLayout::textWidthVsWIdth()
     // minimum right bearing reported by the font engine doesn't cover all the glyphs in the font.
     // The result is that this test may fail in some cases. We should fix this by running the test
     // with a font that we know have no suprising right bearings. See qtextlayout.cpp for details.
+    QFontMetricsF fontMetrics(layout.font());
+    QSet<char16_t> checked;
+    qreal minimumRightBearing = 0.0;
+    for (int i = 0; i < layout.text().size(); ++i) {
+        QChar c = layout.text().at(i);
+        if (!checked.contains(c.unicode())) {
+            qreal rightBearing = fontMetrics.rightBearing(c);
+            if (rightBearing < minimumRightBearing)
+                minimumRightBearing = rightBearing;
+            checked.insert(c.unicode());
+        }
+    }
+    if (minimumRightBearing < fontMetrics.minRightBearing())
+        QSKIP("Font reports invalid minimum right bearing, and can't be used for this test.");
+
     for (int width = 100; width < 1000; ++width) {
         layout.beginLayout();
         QTextLine line = layout.createLine();
@@ -2485,6 +2504,42 @@ void tst_QTextLayout::softHyphens()
         QCOMPARE(line.textLength(), 1);
         QVERIFY(qAbs(line.naturalTextWidth() - shyAdvance) <= 1);
         layout.endLayout();
+    }
+}
+
+void tst_QTextLayout::min_maximumWidth()
+{
+    QString longString("lmong_long_crazy_87235982735_23857239682376923876923876-fuwhfhfw-names-AAAA-deeaois2019-03-03.and.more");
+    QTextLayout layout(longString, testFont);
+
+    for (int wrapMode = QTextOption::NoWrap; wrapMode <= QTextOption::WrapAtWordBoundaryOrAnywhere; ++wrapMode) {
+        QTextOption opt;
+        opt.setWrapMode((QTextOption::WrapMode)wrapMode);
+        layout.setTextOption(opt);
+        layout.beginLayout();
+        while (layout.createLine().isValid()) { }
+        layout.endLayout();
+        const qreal minWidth = layout.minimumWidth();
+        const qreal maxWidth = layout.maximumWidth();
+
+        // Try the layout from slightly wider than the widest (maxWidth)
+        // and narrow it down to slighly narrower than minWidth
+        // layout.maximumWidth() should return the same regardless
+        qreal width = qCeil(maxWidth/10)*10 + 10;    // begin a bit wider
+        const qreal stepSize = 20;
+        while (width >= minWidth - stepSize) {
+            layout.beginLayout();
+            for (;;) {
+                QTextLine line = layout.createLine();
+                if (!line.isValid())
+                    break;
+                line.setLineWidth(width);
+            }
+            layout.endLayout();
+            QCOMPARE(layout.minimumWidth(), minWidth);
+            QCOMPARE(layout.maximumWidth(), maxWidth);
+            width -= stepSize;
+        }
     }
 }
 

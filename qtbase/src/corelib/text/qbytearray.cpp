@@ -1642,6 +1642,7 @@ void QByteArray::chop(int n)
 /*! \fn QByteArray &QByteArray::operator+=(const QString &str)
 
     \overload
+    \obsolete
 
     Appends the string \a str onto the end of this byte array and
     returns a reference to this byte array. The Unicode data is
@@ -2003,6 +2004,7 @@ QByteArray &QByteArray::append(const QByteArray &ba)
 /*! \fn QByteArray &QByteArray::append(const QString &str)
 
     \overload
+    \obsolete
 
     Appends the string \a str to this byte array. The Unicode data is
     converted into 8-bit characters using QString::toUtf8().
@@ -2127,6 +2129,7 @@ QByteArray &QByteArray::insert(int i, const QByteArray &ba)
     \fn QByteArray &QByteArray::insert(int i, const QString &str)
 
     \overload
+    \obsolete
 
     Inserts the string \a str at index position \a i in the byte
     array. The Unicode data is converted into 8-bit characters using
@@ -2476,6 +2479,7 @@ QByteArray &QByteArray::replace(const char *before, int bsize, const char *after
 /*! \fn QByteArray &QByteArray::replace(const QString &before, const QByteArray &after)
 
     \overload
+    \obsolete
 
     Replaces every occurrence of the string \a before with the byte
     array \a after. The Unicode data is converted into 8-bit
@@ -2489,6 +2493,7 @@ QByteArray &QByteArray::replace(const char *before, int bsize, const char *after
 
 /*! \fn QByteArray &QByteArray::replace(const QString &before, const char *after)
     \overload
+    \obsolete
 
     Replaces every occurrence of the string \a before with the string
     \a after.
@@ -2519,6 +2524,7 @@ QByteArray &QByteArray::replace(char before, const QByteArray &after)
 /*! \fn QByteArray &QByteArray::replace(char before, const QString &after)
 
     \overload
+    \obsolete
 
     Replaces every occurrence of the character \a before with the
     string \a after. The Unicode data is converted into 8-bit
@@ -2657,6 +2663,7 @@ int QByteArray::indexOf(const QByteArray &ba, int from) const
 /*! \fn int QByteArray::indexOf(const QString &str, int from) const
 
     \overload
+    \obsolete
 
     Returns the index position of the first occurrence of the string
     \a str in the byte array, searching forward from index position
@@ -2781,6 +2788,7 @@ int QByteArray::lastIndexOf(const QByteArray &ba, int from) const
 /*! \fn int QByteArray::lastIndexOf(const QString &str, int from) const
 
     \overload
+    \obsolete
 
     Returns the index position of the last occurrence of the string \a
     str in the byte array, searching backward from index position \a
@@ -5097,20 +5105,28 @@ namespace QtPrivate {
 namespace DeprecatedRefClassBehavior {
 void warn(WarningType w, EmittingClass c)
 {
-    static const char deprecatedBehaviorString[] =
+    const char *deprecatedBehaviorString =
             "The corresponding behavior is deprecated, and will be changed"
              " in a future version of Qt.";
 
     const char *emittingClassName = nullptr;
-    const char *containerClassName = nullptr;
 
     switch (c) {
     case EmittingClass::QByteRef:
         emittingClassName = "QByteRef";
-        containerClassName = "QByteArray";
         break;
     case EmittingClass::QCharRef:
         emittingClassName = "QCharRef";
+        break;
+    }
+
+    const char *containerClassName = nullptr;
+
+    switch (c) {
+    case EmittingClass::QByteRef:
+        containerClassName = "QByteArray";
+        break;
+    case EmittingClass::QCharRef:
         containerClassName = "QString";
         break;
     }
@@ -5121,7 +5137,7 @@ void warn(WarningType w, EmittingClass c)
                  emittingClassName, containerClassName, deprecatedBehaviorString);
         break;
     case WarningType::DelayedDetach:
-        qWarning("Using %s with on a %s that is not already detached. %s",
+        qWarning("Using %s on a %s that is not already detached. %s",
                  emittingClassName, containerClassName, deprecatedBehaviorString);
         break;
     }

@@ -88,7 +88,7 @@ class QtQuick2DialogsPlugin : public QQmlExtensionPlugin
 public:
     QtQuick2DialogsPlugin() : QQmlExtensionPlugin(), m_useResources(true) { }
 
-    virtual void registerTypes(const char *uri) {
+    void registerTypes(const char *uri) override {
         Q_ASSERT(QLatin1String(uri) == QLatin1String("QtQuick.Dialogs"));
         bool hasTopLevelWindows = QGuiApplicationPrivate::platformIntegration()->
             hasCapability(QPlatformIntegration::MultipleWindows);
@@ -110,7 +110,7 @@ public:
 #endif
 #endif
 
-        QQuickAbstractDialog::m_decorationComponentUrl = fileLocation("DefaultWindowDecoration");
+        QQuickAbstractDialog::m_decorationComponentUrl = fileLocation("qml/DefaultWindowDecoration");
         // Prefer the QPA dialog helpers if the platform supports them.
         // Else if there is a QWidget-based implementation, check whether it's
         // possible to instantiate it from Qt Quick.

@@ -2552,8 +2552,9 @@ void DocBookGenerator::generateDocBookSynopsis(const Node *node)
     if (config->getBool(CONFIG_DOCBOOKEXTENSIONS))
         return;
 
-    // Nothing to export in some cases.
-    if (node->isGroup() || node->isGroup() || node->isPropertyGroup() || node->isModule()
+    // Nothing to export in some cases. Note that isSharedCommentNode() returns
+    // true also for QML property groups.
+    if (node->isGroup() || node->isGroup() || node->isSharedCommentNode() || node->isModule()
         || node->isJsModule() || node->isQmlModule() || node->isPageNode())
         return;
 
@@ -3588,8 +3589,11 @@ void DocBookGenerator::generateDetailedMember(const Node *node, const PageNode *
         if (!section.members().isEmpty()) {
             writer->writeStartElement(dbNamespace, "para");
             newLine();
-            writer->writeTextElement(dbNamespace, "emphasis", "Access functions:");
+            writer->writeStartElement(dbNamespace, "emphasis");
             writer->writeAttribute("role", "bold");
+            writer->writeCharacters("Access functions:");
+            newLine();
+            writer->writeEndElement(); // emphasis
             newLine();
             writer->writeEndElement(); // para
             newLine();
@@ -3602,8 +3606,11 @@ void DocBookGenerator::generateDetailedMember(const Node *node, const PageNode *
         if (!notifiers.members().isEmpty()) {
             writer->writeStartElement(dbNamespace, "para");
             newLine();
-            writer->writeTextElement(dbNamespace, "emphasis", "Notifier signal:");
+            writer->writeStartElement(dbNamespace, "emphasis");
             writer->writeAttribute("role", "bold");
+            writer->writeCharacters("Notifier signal:");
+            newLine();
+            writer->writeEndElement(); // emphasis
             newLine();
             writer->writeEndElement(); // para
             newLine();
@@ -4131,13 +4138,16 @@ void DocBookGenerator::generateCollectionNode(CollectionNode *cn)
     // Element synopsis.
     generateDocBookSynopsis(cn);
 
-    // Actual content.
-    if (cn->isModule()) {
-        // Generate brief text and status for modules.
-        generateBrief(cn);
+    // Generate brief for C++ modules, status for all modules.
+    if (cn->genus() != Node::DOC && cn->genus() != Node::DontCare) {
+        if (cn->isModule())
+            generateBrief(cn);
         generateStatus(cn);
         generateSince(cn);
+    }
 
+    // Actual content.
+    if (cn->isModule()) {
         if (!cn->noAutoList()) {
             NodeMultiMap nmm;
             cn->getMemberNamespaces(nmm);
@@ -4156,9 +4166,8 @@ void DocBookGenerator::generateCollectionNode(CollectionNode *cn)
         }
     }
 
-    Text brief = cn->doc().briefText();
     bool generatedTitle = false;
-    if (cn->isModule() && !brief.isEmpty()) {
+    if (cn->isModule() && !cn->doc().briefText().isEmpty()) {
         startSection(registerRef("details"), "Detailed Description");
         generatedTitle = true;
     } else {

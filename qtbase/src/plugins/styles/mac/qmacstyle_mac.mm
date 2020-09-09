@@ -3977,13 +3977,19 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 // which makes no sense on tabs.
                 NSPopUpArrowPosition oldPosition = NSPopUpArrowAtCenter;
                 NSPopUpButtonCell *pbCell = nil;
-                if (isPopupButton) {
+                auto rAdjusted = r;
+                if (isPopupButton && tp == QStyleOptionTab::OnlyOneTab) {
                     pbCell = static_cast<NSPopUpButtonCell *>(pb.cell);
                     oldPosition = pbCell.arrowPosition;
                     pbCell.arrowPosition = NSPopUpNoArrow;
+                    if (pb.state == NSControlStateValueOff) {
+                        // NSPopUpButton in this state is smaller.
+                        rAdjusted.origin.x -= 3;
+                        rAdjusted.size.width += 6;
+                    }
                 }
 
-                [pb.cell drawBezelWithFrame:r inView:pb.superview];
+                [pb.cell drawBezelWithFrame:rAdjusted inView:pb.superview];
 
                 if (pbCell) // Restore, we may reuse it for a ComboBox.
                     pbCell.arrowPosition = oldPosition;
@@ -4649,15 +4655,13 @@ QRect QMacStyle::subElementRect(SubElement sr, const QStyleOption *opt,
             auto frameRect = cw.adjustedControlFrame(btn->rect);
             if (sr == SE_PushButtonContents) {
                 frameRect -= cw.titleMargins();
-            } else {
+            } else if (cw.type != QMacStylePrivate::Button_SquareButton) {
                 auto *pb = static_cast<NSButton *>(d->cocoaControl(cw));
-                if (cw.type != QMacStylePrivate::Button_SquareButton) {
-                    frameRect = QRectF::fromCGRect([pb alignmentRectForFrame:pb.frame]);
-                    if (cw.type == QMacStylePrivate::Button_PushButton)
-                        frameRect -= pushButtonShadowMargins[cw.size];
-                    else if (cw.type == QMacStylePrivate::Button_PullDown)
-                        frameRect -= pullDownButtonShadowMargins[cw.size];
-                }
+                frameRect = QRectF::fromCGRect([pb alignmentRectForFrame:frameRect.toCGRect()]);
+                if (cw.type == QMacStylePrivate::Button_PushButton)
+                    frameRect -= pushButtonShadowMargins[cw.size];
+                else if (cw.type == QMacStylePrivate::Button_PullDown)
+                    frameRect -= pullDownButtonShadowMargins[cw.size];
             }
             rect = frameRect.toRect();
         }
@@ -5393,7 +5397,6 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                 } else
 #endif
                 {
-                    [slider calcSize];
                     if (!hasDoubleTicks)
                         fixStaleGeometry(slider);
                     NSSliderCell *cell = slider.cell;
@@ -5405,7 +5408,18 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 
                     const CGRect barRect = [cell barRectFlipped:hasTicks];
                     if (drawBar) {
-                        [cell drawBarInside:barRect flipped:!verticalFlip];
+                        if (!isHorizontal && !sl->upsideDown && (hasDoubleTicks || !hasTicks)) {
+                            // The logic behind verticalFlip and upsideDown is the twisted one.
+                            // Bar is the only part of the cell affected by this 'flipped'
+                            // parameter in the call below, all other parts (knob, etc.) 'fixed'
+                            // by scaling/translating. With ticks on one side it's not a problem
+                            // at all - the bar is gray anyway. Without ticks or with ticks on
+                            // the both sides, for inverted appearance and vertical orientation -
+                            // we must flip so that knob and blue filling work in accordance.
+                            [cell drawBarInside:barRect flipped:true];
+                        } else {
+                            [cell drawBarInside:barRect flipped:!verticalFlip];
+                        }
                         // This ain't HIG kosher: force unfilled bar look.
                         if (hasDoubleTicks)
                             slider.numberOfTickMarks = numberOfTickMarks;
@@ -5778,7 +5792,6 @@ QStyle::SubControl QMacStyle::hitTestComplexControl(ComplexControl cc,
             if (!setupSlider(slider, sl))
                 break;
 
-            [slider calcSize];
             NSSliderCell *cell = slider.cell;
             const auto barRect = QRectF::fromCGRect([cell barRectFlipped:hasTicks]);
             const auto knobRect = QRectF::fromCGRect([cell knobRectFlipped:NO]);
@@ -5883,7 +5896,6 @@ QRect QMacStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex *op
             if (!setupSlider(slider, sl))
                 break;
 
-            [slider calcSize];
             NSSliderCell *cell = slider.cell;
             if (sc == SC_SliderHandle) {
                 ret = QRectF::fromCGRect([cell knobRectFlipped:NO]).toRect();

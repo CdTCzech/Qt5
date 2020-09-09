@@ -535,7 +535,10 @@ static QString getRelocatablePrefix()
 #if defined(QT_STATIC)
     prefixPath = prefixFromAppDirHelper();
 #elif defined(Q_OS_DARWIN) && QT_CONFIG(framework)
-    auto qtCoreBundle = CFBundleGetBundleWithIdentifier(CFSTR("org.qt-project.QtCore"));
+#ifndef QT_LIBINFIX
+    #define QT_LIBINFIX ""
+#endif
+    auto qtCoreBundle = CFBundleGetBundleWithIdentifier(CFSTR("org.qt-project.QtCore" QT_LIBINFIX));
     if (!qtCoreBundle) {
         // When running Qt apps over Samba shares, CoreFoundation will fail to find
         // the Resources directory inside the bundle, This directory is a symlink,
@@ -548,7 +551,7 @@ static QString getRelocatablePrefix()
             auto bundle = CFBundleRef(CFArrayGetValueAtIndex(allBundles, i));
             auto url = QCFType<CFURLRef>(CFBundleCopyBundleURL(bundle));
             auto path = QCFType<CFStringRef>(CFURLCopyFileSystemPath(url, kCFURLPOSIXPathStyle));
-            if (CFStringHasSuffix(path, CFSTR("/QtCore.framework"))) {
+            if (CFStringHasSuffix(path, CFSTR("/QtCore" QT_LIBINFIX ".framework"))) {
                 qtCoreBundle = bundle;
                 break;
             }
@@ -574,7 +577,7 @@ static QString getRelocatablePrefix()
     Dl_info info;
     int result = dladdr(reinterpret_cast<void *>(&QLibraryInfo::isDebugBuild), &info);
     if (result > 0 && info.dli_fname)
-        prefixPath = prefixFromQtCoreLibraryHelper(QString::fromLatin1(info.dli_fname));
+        prefixPath = prefixFromQtCoreLibraryHelper(QString::fromLocal8Bit(info.dli_fname));
 #elif defined(Q_OS_WIN)
     HMODULE hModule = getWindowsModuleHandle();
     const int kBufferSize = 4096;
@@ -588,7 +591,7 @@ static QString getRelocatablePrefix()
         // QtCore DLL is next to the executable. This is either a windeployqt'ed executable or an
         // executable within the QT_HOST_BIN directory. We're detecting the latter case by checking
         // whether there's an import library corresponding to our QtCore DLL in PREFIX/lib.
-        const QString libdir = QString::fromLatin1(
+        const QString libdir = QString::fromLocal8Bit(
             qt_configure_strs + qt_configure_str_offsets[QLibraryInfo::LibrariesPath - 1]);
         const QLatin1Char slash('/');
 #if defined(Q_CC_MINGW)
@@ -620,7 +623,7 @@ static QString getRelocatablePrefix()
     // QTBUG-78948: libQt5Core.so may be located in subdirectories below libdir.
     // See "Hardware capabilities" in the ld.so documentation and the Qt 5.3.0
     // changelog regarding SSE2 support.
-    const QString libdir = QString::fromLatin1(
+    const QString libdir = QString::fromLocal8Bit(
         qt_configure_strs + qt_configure_str_offsets[QLibraryInfo::LibrariesPath - 1]);
     QDir prefixDir(prefixPath);
     while (!prefixDir.exists(libdir)) {

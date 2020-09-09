@@ -81,8 +81,6 @@ public:
     tst_QWebEnginePage();
     virtual ~tst_QWebEnginePage();
 
-    bool eventFilter(QObject *watched, QEvent *event);
-
 public Q_SLOTS:
     void init();
     void cleanup();
@@ -95,6 +93,7 @@ private Q_SLOTS:
     void comboBoxPopupPositionAfterChildMove();
     void acceptNavigationRequest();
     void acceptNavigationRequestNavigationType();
+    void acceptNavigationRequestRelativeToNothing();
     void geolocationRequestJS_data();
     void geolocationRequestJS();
     void loadFinished();
@@ -203,8 +202,8 @@ private Q_SLOTS:
     void triggerActionWithoutMenu();
     void dynamicFrame();
 
-    void notificationRequest_data();
-    void notificationRequest();
+    void notificationPermission_data();
+    void notificationPermission();
     void sendNotification();
     void contentsSize();
 
@@ -230,6 +229,10 @@ private Q_SLOTS:
     void renderProcessCrashed();
     void renderProcessPid();
     void backgroundColor();
+    void audioMuted();
+    void closeContents();
+    void isSafeRedirect_data();
+    void isSafeRedirect();
 
 private:
     static QPoint elementCenter(QWebEnginePage *page, const QString &id);
@@ -239,8 +242,6 @@ private:
 
     QWebEngineView* m_view;
     QWebEnginePage* m_page;
-    QWebEngineView* m_inputFieldsTestView;
-    int m_inputFieldTestPaintCount;
     QString tmpDirPath() const
     {
         static QString tmpd = QDir::tempPath() + "/tst_qwebenginepage-"
@@ -255,16 +256,6 @@ tst_QWebEnginePage::tst_QWebEnginePage()
 
 tst_QWebEnginePage::~tst_QWebEnginePage()
 {
-}
-
-bool tst_QWebEnginePage::eventFilter(QObject* watched, QEvent* event)
-{
-    // used on the inputFieldFocus test
-    if (watched == m_inputFieldsTestView) {
-        if (event->type() == QEvent::Paint)
-            m_inputFieldTestPaintCount++;
-    }
-    return QObject::eventFilter(watched, event);
 }
 
 void tst_QWebEnginePage::init()
@@ -610,6 +601,34 @@ void tst_QWebEnginePage::acceptNavigationRequestNavigationType()
     for (int i = 0; i < expectedList.count(); ++i) {
         QCOMPARE(page.navigations[i].type, expectedList[i]);
     }
+}
+
+// Relative url without base url.
+//
+// See also: QTBUG-48435
+void tst_QWebEnginePage::acceptNavigationRequestRelativeToNothing()
+{
+    TestPage page;
+    QSignalSpy loadSpy(&page, SIGNAL(loadFinished(bool)));
+
+    page.setHtml(QString("<html><body><a id='link' href='S0'>limited time offer</a></body></html>"),
+                 /* baseUrl: */ QUrl());
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 1, 20000);
+    page.runJavaScript(QStringLiteral("document.getElementById(\"link\").click()"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 2, 20000);
+    page.setHtml(QString("<html><body><a id='link' href='S0'>limited time offer</a></body></html>"),
+                 /* baseUrl: */ QString("qrc:/"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 3, 20000);
+    page.runJavaScript(QStringLiteral("document.getElementById(\"link\").click()"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 4, 20000);
+
+    // The two setHtml and the second click are counted, while the
+    // first click is ignored due to the empty base url.
+    QCOMPARE(page.navigations.count(), 3);
+    QCOMPARE(page.navigations[0].type, QWebEnginePage::NavigationTypeTyped);
+    QCOMPARE(page.navigations[1].type, QWebEnginePage::NavigationTypeTyped);
+    QCOMPARE(page.navigations[2].type, QWebEnginePage::NavigationTypeLinkClicked);
+    QCOMPARE(page.navigations[2].url, QUrl(QString("qrc:/S0")));
 }
 
 void tst_QWebEnginePage::popupFormSubmission()
@@ -3588,30 +3607,61 @@ public:
     }
 };
 
-void tst_QWebEnginePage::notificationRequest_data()
+void tst_QWebEnginePage::notificationPermission_data()
 {
+    QTest::addColumn<bool>("setOnInit");
     QTest::addColumn<QWebEnginePage::PermissionPolicy>("policy");
     QTest::addColumn<QString>("permission");
-    QTest::newRow("deny") << QWebEnginePage::PermissionDeniedByUser << "denied";
-    QTest::newRow("grant") << QWebEnginePage::PermissionGrantedByUser << "granted";
+    QTest::newRow("denyOnInit")  << true  << QWebEnginePage::PermissionDeniedByUser << "denied";
+    QTest::newRow("deny")        << false << QWebEnginePage::PermissionDeniedByUser << "denied";
+    QTest::newRow("grant")       << false << QWebEnginePage::PermissionGrantedByUser << "granted";
+    QTest::newRow("grantOnInit") << true  << QWebEnginePage::PermissionGrantedByUser << "granted";
 }
 
-void tst_QWebEnginePage::notificationRequest()
+void tst_QWebEnginePage::notificationPermission()
 {
+    QFETCH(bool, setOnInit);
     QFETCH(QWebEnginePage::PermissionPolicy, policy);
     QFETCH(QString, permission);
 
-    NotificationPage page(policy);
-    QVERIFY(page.spyLoad.waitForResult());
+    QWebEngineProfile otr;
+    QWebEnginePage page(&otr, nullptr);
 
-    page.resetPermission();
-    QCOMPARE(page.getPermission(), "default");
+    QUrl baseUrl("https://www.example.com/somepage.html");
 
-    page.requestPermission();
-    page.spyRequest.waitForResult();
-    QVERIFY(page.spyRequest.wasCalled());
+    bool permissionRequested = false, errorState = false;
+    connect(&page, &QWebEnginePage::featurePermissionRequested, &page, [&] (const QUrl &o, QWebEnginePage::Feature f) {
+        if (f != QWebEnginePage::Notifications)
+            return;
+        if (permissionRequested || o != baseUrl.url(QUrl::RemoveFilename)) {
+            qWarning() << "Unexpected case. Can't proceed." << setOnInit << permissionRequested << o;
+            errorState = true;
+            return;
+        }
+        permissionRequested = true;
+        page.setFeaturePermission(o, f, policy);
+    });
 
-    QCOMPARE(page.getPermission(), permission);
+    if (setOnInit)
+        page.setFeaturePermission(baseUrl, QWebEnginePage::Notifications, policy);
+
+    QSignalSpy spy(&page, &QWebEnginePage::loadFinished);
+    page.setHtml(QString("<html><body>Test</body></html>"), baseUrl);
+    QTRY_COMPARE(spy.count(), 1);
+
+    QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("Notification.permission")), setOnInit ? permission : QLatin1String("default"));
+
+    if (!setOnInit) {
+        page.setFeaturePermission(baseUrl, QWebEnginePage::Notifications, policy);
+        QTRY_COMPARE(evaluateJavaScriptSync(&page, QStringLiteral("Notification.permission")), permission);
+    }
+
+    auto js = QStringLiteral("var permission; Notification.requestPermission().then(p => { permission = p })");
+    evaluateJavaScriptSync(&page, js);
+    QTRY_COMPARE(evaluateJavaScriptSync(&page, "permission").toString(), permission);
+    // permission is not 'remembered' from api standpoint, hence is not suppressed on explicit call from JS
+    QVERIFY(permissionRequested);
+    QVERIFY(!errorState);
 }
 
 void tst_QWebEnginePage::sendNotification()
@@ -4589,6 +4639,75 @@ void tst_QWebEnginePage::backgroundColor()
 
     QCOMPARE(page->backgroundColor(), Qt::green);
     QTRY_COMPARE(view.grab().toImage().pixelColor(center), Qt::green);
+}
+
+void tst_QWebEnginePage::audioMuted()
+{
+    QWebEngineProfile profile;
+    QWebEnginePage page(&profile);
+    QSignalSpy spy(&page, &QWebEnginePage::audioMutedChanged);
+
+    QCOMPARE(page.isAudioMuted(), false);
+    page.setAudioMuted(true);
+    loadSync(&page, QUrl("about:blank"));
+    QCOMPARE(page.isAudioMuted(), true);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy[0][0], QVariant(true));
+    page.setAudioMuted(false);
+    QCOMPARE(page.isAudioMuted(), false);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy[1][0], QVariant(false));
+}
+
+void tst_QWebEnginePage::closeContents()
+{
+    TestPage page;
+    QSignalSpy windowCreatedSpy(&page, &TestPage::windowCreated);
+    page.runJavaScript("var dialog = window.open('', '', 'width=100, height=100');");
+    QTRY_COMPARE(windowCreatedSpy.count(), 1);
+
+    QWebEngineView *dialogView = new QWebEngineView;
+    QWebEnginePage *dialogPage = page.createdWindows[0];
+    dialogPage->setView(dialogView);
+    QCOMPARE(dialogPage->lifecycleState(), QWebEnginePage::LifecycleState::Active);
+
+    // This should not crash.
+    connect(dialogPage, &QWebEnginePage::windowCloseRequested, dialogView, &QWebEngineView::close);
+    page.runJavaScript("dialog.close();");
+
+    // QWebEngineView::closeEvent() sets the life cycle state to discarded.
+    QTRY_COMPARE(dialogPage->lifecycleState(), QWebEnginePage::LifecycleState::Discarded);
+    delete dialogView;
+}
+
+// Based on QTBUG-84011
+void tst_QWebEnginePage::isSafeRedirect_data()
+{
+    QTest::addColumn<QUrl>("requestedUrl");
+    QTest::addColumn<QUrl>("expectedUrl");
+    QString fileScheme = "file://";
+
+#ifdef Q_OS_WIN
+    fileScheme += "/";
+#endif
+
+    QString tempDir(fileScheme + QDir::tempPath());
+    QTest::newRow(qPrintable(tempDir)) << QUrl(tempDir) << QUrl(tempDir + "/");
+    QTest::newRow(qPrintable(tempDir + QString("/foo/bar"))) << QUrl(tempDir + "/foo/bar") << QUrl(tempDir + "/foo/bar");
+    QTest::newRow("filesystem:http://foo.com/bar") << QUrl("filesystem:http://foo.com/bar") << QUrl("filesystem:http://foo.com/bar/");
+}
+
+void tst_QWebEnginePage::isSafeRedirect()
+{
+    QFETCH(QUrl, requestedUrl);
+    QFETCH(QUrl, expectedUrl);
+
+    TestPage page;
+    QSignalSpy spy(&page, SIGNAL(loadFinished(bool)));
+    page.setUrl(requestedUrl);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(page.url(), expectedUrl);
+    spy.clear();
 }
 
 static QByteArrayList params = {QByteArrayLiteral("--use-fake-device-for-media-stream")};

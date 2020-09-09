@@ -61,6 +61,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/certificate_transparency/ct_known_logs.h"
 #include "components/network_session_configurator/common/network_features.h"
+#include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cors_exempt_headers.h"
@@ -166,7 +167,8 @@ private:
 
 network::mojom::NetworkContext *SystemNetworkContextManager::GetContext()
 {
-    if (!network_service_network_context_ || network_service_network_context_.encountered_error()) {
+    if (!network_service_network_context_ ||
+        !network_service_network_context_.is_connected()) {
         // This should call into OnNetworkServiceCreated(), which will re-create
         // the network service, if needed. There's a chance that it won't be
         // invoked, if the NetworkContext has encountered an error but the
@@ -182,33 +184,20 @@ network::mojom::NetworkContext *SystemNetworkContextManager::GetContext()
 network::mojom::URLLoaderFactory *SystemNetworkContextManager::GetURLLoaderFactory()
 {
     // Create the URLLoaderFactory as needed.
-    if (url_loader_factory_ && !url_loader_factory_.encountered_error()) {
+    if (url_loader_factory_ && url_loader_factory_.is_connected()) {
         return url_loader_factory_.get();
     }
 
     network::mojom::URLLoaderFactoryParamsPtr params = network::mojom::URLLoaderFactoryParams::New();
     params->process_id = network::mojom::kBrowserProcessId;
     params->is_corb_enabled = false;
-    GetContext()->CreateURLLoaderFactory(mojo::MakeRequest(&url_loader_factory_), std::move(params));
+    GetContext()->CreateURLLoaderFactory(url_loader_factory_.BindNewPipeAndPassReceiver(), std::move(params));
     return url_loader_factory_.get();
 }
 
 scoped_refptr<network::SharedURLLoaderFactory> SystemNetworkContextManager::GetSharedURLLoaderFactory()
 {
     return shared_url_loader_factory_;
-}
-
-void SystemNetworkContextManager::SetUp(
-        network::mojom::NetworkContextRequest *network_context_request,
-        network::mojom::NetworkContextParamsPtr *network_context_params, bool *stub_resolver_enabled,
-        base::Optional<std::vector<network::mojom::DnsOverHttpsServerPtr>> *dns_over_https_servers,
-        network::mojom::HttpAuthStaticParamsPtr *http_auth_static_params,
-        network::mojom::HttpAuthDynamicParamsPtr *http_auth_dynamic_params, bool *is_quic_allowed)
-{
-    *is_quic_allowed = false;
-    *http_auth_static_params = CreateHttpAuthStaticParams();
-    *http_auth_dynamic_params = CreateHttpAuthDynamicParams();
-    //    GetStubResolverConfig(local_state_, stub_resolver_enabled, dns_over_https_servers);
 }
 
 // static
@@ -244,15 +233,20 @@ SystemNetworkContextManager::~SystemNetworkContextManager()
 
 void SystemNetworkContextManager::OnNetworkServiceCreated(network::mojom::NetworkService *network_service)
 {
+    bool is_quic_force_enabled = base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableQuic);
     // Disable QUIC globally
-    network_service->DisableQuic();
+    if (!is_quic_force_enabled)
+        network_service->DisableQuic();
 
     network_service->SetUpHttpAuth(CreateHttpAuthStaticParams());
     network_service->ConfigureHttpAuthPrefs(CreateHttpAuthDynamicParams());
 
     // The system NetworkContext must be created first, since it sets
     // |primary_network_context| to true.
-    network_service->CreateNetworkContext(MakeRequest(&network_service_network_context_), CreateNetworkContextParams());
+    network_service_network_context_.reset();
+    network_service->CreateNetworkContext(
+        network_service_network_context_.BindNewPipeAndPassReceiver(),
+        CreateNetworkContextParams());
 
     // Configure the stub resolver. This must be done after the system
     // NetworkContext is created, but before anything has the chance to use it.

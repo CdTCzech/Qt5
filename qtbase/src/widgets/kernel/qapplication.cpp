@@ -985,10 +985,7 @@ QStyle *QApplication::style()
         // Take ownership of the style
         defaultStyle->setParent(qApp);
 
-        if (testAttribute(Qt::AA_SetPalette))
-            defaultStyle->polish(*QGuiApplicationPrivate::app_pal);
-        else
-            QApplicationPrivate::initializeWidgetPalettesFromTheme();
+        QGuiApplicationPrivate::updatePalette();
 
 #ifndef QT_NO_STYLE_STYLESHEET
         if (!QApplicationPrivate::styleSheet.isEmpty()) {
@@ -1059,13 +1056,10 @@ void QApplication::setStyle(QStyle *style)
         QApplicationPrivate::app_style = style;
     QApplicationPrivate::app_style->setParent(qApp); // take ownership
 
-    // take care of possible palette requirements of certain gui
-    // styles. Do it before polishing the application since the style
-    // might call QApplication::setPalette() itself
-    if (testAttribute(Qt::AA_SetPalette))
-        QApplicationPrivate::app_style->polish(*QGuiApplicationPrivate::app_pal);
-    else
-        QApplicationPrivate::initializeWidgetPalettesFromTheme();
+    // Take care of possible palette requirements of certain
+    // styles. Do it before polishing the application since the
+    // style might call QApplication::setPalette() itself.
+    QGuiApplicationPrivate::updatePalette();
 
     // The default widget font hash is based on the platform theme,
     // not the style, but the widget fonts could in theory have been
@@ -1262,6 +1256,13 @@ QPalette QApplicationPrivate::basePalette() const
     if (const QPalette *themePalette = platformTheme() ? platformTheme()->palette() : nullptr)
         palette = themePalette->resolve(palette);
 
+    // Finish off by letting the application style polish the palette. This will
+    // not result in the polished palette becoming a user-set palette, as the
+    // resulting base palette is only used as a fallback, with the resolve mask
+    // set to 0.
+    if (app_style)
+        app_style->polish(palette);
+
     return palette;
 }
 
@@ -1335,17 +1336,19 @@ QPalette QApplication::palette(const char *className)
 */
 void QApplication::setPalette(const QPalette &palette, const char* className)
 {
-    QPalette polishedPalette = palette;
-
-    if (QApplicationPrivate::app_style)
-        QApplicationPrivate::app_style->polish(polishedPalette);
-
     if (className) {
+        QPalette polishedPalette = palette;
+        if (QApplicationPrivate::app_style) {
+            auto originalResolveMask = palette.resolve();
+            QApplicationPrivate::app_style->polish(polishedPalette);
+            polishedPalette.resolve(originalResolveMask);
+        }
+
         QApplicationPrivate::widgetPalettes.insert(className, polishedPalette);
         if (qApp)
             qApp->d_func()->handlePaletteChanged(className);
     } else {
-        QGuiApplication::setPalette(polishedPalette);
+        QGuiApplication::setPalette(palette);
     }
 }
 
@@ -1558,6 +1561,12 @@ void QApplicationPrivate::setSystemFont(const QFont &font)
 */
 QString QApplicationPrivate::desktopStyleKey()
 {
+#if defined(QT_BUILD_INTERNAL)
+    // Allow auto-tests to override the desktop style
+    if (qEnvironmentVariableIsSet("QT_DESKTOP_STYLE_KEY"))
+        return QString::fromLocal8Bit(qgetenv("QT_DESKTOP_STYLE_KEY"));
+#endif
+
     // The platform theme might return a style that is not available, find
     // first valid one.
     if (const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme()) {
@@ -2121,10 +2130,12 @@ QWidget *QApplicationPrivate::focusNextPrevChild_helper(QWidget *toplevel, bool 
         // \a next). This is to ensure that we can tab in and out of compound widgets
         // without getting stuck in a tab-loop between parent and child.
         QWidget *focusProxy = test->d_func()->deepestFocusProxy();
-
-        if ((test->focusPolicy() & focus_flag) == focus_flag
-            && !(next && focusProxy && focusProxy->isAncestorOf(test))
-            && !(!next && focusProxy && test->isAncestorOf(focusProxy))
+        const bool canTakeFocus = ((focusProxy ? focusProxy->focusPolicy() : test->focusPolicy())
+                                  & focus_flag) == focus_flag;
+        const bool composites = focusProxy ? (next ? focusProxy->isAncestorOf(test)
+                                                   : test->isAncestorOf(focusProxy))
+                                           : false;
+        if (canTakeFocus && !composites
             && test->isVisibleTo(toplevel) && test->isEnabled()
             && !(w->windowType() == Qt::SubWindow && !w->isAncestorOf(test))
             && (toplevel->windowType() != Qt::SubWindow || toplevel->isAncestorOf(test))
@@ -2862,59 +2873,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
             return true; // Platform plugin ate the event
     }
 
-    if(e->spontaneous()) {
-        // Capture the current mouse and keyboard states. Doing so here is
-        // required in order to support Qt Test synthesized events. Real mouse
-        // and keyboard state updates from the platform plugin are managed by
-        // QGuiApplicationPrivate::process(Mouse|Wheel|Key|Touch|Tablet)Event();
-        // ### FIXME: Qt Test should not call qapp->notify(), but rather route
-        // the events through the proper QPA interface. This is required to
-        // properly generate all other events such as enter/leave etc.
-        switch (e->type()) {
-        case QEvent::MouseButtonPress:
-            {
-                QMouseEvent *me = static_cast<QMouseEvent*>(e);
-                QApplicationPrivate::modifier_buttons = me->modifiers();
-                QApplicationPrivate::mouse_buttons |= me->button();
-                break;
-            }
-        case QEvent::MouseButtonDblClick:
-            {
-                QMouseEvent *me = static_cast<QMouseEvent*>(e);
-                QApplicationPrivate::modifier_buttons = me->modifiers();
-                QApplicationPrivate::mouse_buttons |= me->button();
-                break;
-            }
-        case QEvent::MouseButtonRelease:
-            {
-                QMouseEvent *me = static_cast<QMouseEvent*>(e);
-                QApplicationPrivate::modifier_buttons = me->modifiers();
-                QApplicationPrivate::mouse_buttons &= ~me->button();
-                break;
-            }
-        case QEvent::KeyPress:
-        case QEvent::KeyRelease:
-        case QEvent::MouseMove:
-#if QT_CONFIG(wheelevent)
-        case QEvent::Wheel:
-#endif
-        case QEvent::TouchBegin:
-        case QEvent::TouchUpdate:
-        case QEvent::TouchEnd:
-#if QT_CONFIG(tabletevent)
-        case QEvent::TabletMove:
-        case QEvent::TabletPress:
-        case QEvent::TabletRelease:
-#endif
-            {
-                QInputEvent *ie = static_cast<QInputEvent*>(e);
-                QApplicationPrivate::modifier_buttons = ie->modifiers();
-                break;
-            }
-        default:
-            break;
-        }
-    }
+    QGuiApplicationPrivate::captureGlobalModifierState(e);
 
 #ifndef QT_NO_GESTURES
     // walk through parents and check for gestures
@@ -3179,23 +3138,30 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
             //
             // We assume that, when supported, the phase cycle follows the pattern:
             //
-            //         ScrollBegin (ScrollUpdate* ScrollEnd)+
+            //         ScrollBegin (ScrollUpdate* ScrollMomentum* ScrollEnd)+
             //
             // This means that we can have scrolling sequences (starting with ScrollBegin)
             // or partial sequences (after a ScrollEnd and starting with ScrollUpdate).
             // If wheel_widget is null because it was deleted, we also take the same
             // code path as an initial sequence.
-            if (phase == Qt::NoScrollPhase || phase == Qt::ScrollBegin || !QApplicationPrivate::wheel_widget) {
-
+            if (!spontaneous) {
+                // wheel_widget may forward the wheel event to a delegate widget,
+                // either directly or indirectly (e.g. QAbstractScrollArea will
+                // forward to its QScrollBars through viewportEvent()). In that
+                // case, the event will not be spontaneous but synthesized, so
+                // we can send it straight to the receiver.
+                wheel->ignore();
+                res = d->notify_helper(w, wheel);
+            } else if (phase == Qt::NoScrollPhase || phase == Qt::ScrollBegin || !QApplicationPrivate::wheel_widget) {
                 // A system-generated ScrollBegin event starts a new user scrolling
                 // sequence, so we reset wheel_widget in case no one accepts the event
                 // or if we didn't get (or missed) a ScrollEnd previously.
-                if (spontaneous && phase == Qt::ScrollBegin)
+                if (phase == Qt::ScrollBegin)
                     QApplicationPrivate::wheel_widget = nullptr;
 
-                QPoint relpos = wheel->position().toPoint();
+                const QPoint relpos = wheel->position().toPoint();
 
-                if (spontaneous && (phase == Qt::NoScrollPhase || phase == Qt::ScrollUpdate))
+                if (phase == Qt::NoScrollPhase || phase == Qt::ScrollUpdate)
                     QApplicationPrivate::giveFocusAccordingToFocusPolicy(w, e, relpos);
 
 #if QT_DEPRECATED_SINCE(5, 14)
@@ -3211,7 +3177,7 @@ QT_WARNING_POP
                 we.setTimestamp(wheel->timestamp());
                 bool eventAccepted;
                 do {
-                    we.spont = spontaneous && w == receiver;
+                    we.spont = w == receiver;
                     we.ignore();
                     res = d->notify_helper(w, &we);
                     eventAccepted = we.isAccepted();
@@ -3219,7 +3185,7 @@ QT_WARNING_POP
                         // A new scrolling sequence or partial sequence starts and w has accepted
                         // the event. Therefore, we can set wheel_widget, but only if it's not
                         // the end of a sequence.
-                        if (spontaneous && (phase == Qt::ScrollBegin || phase == Qt::ScrollUpdate))
+                        if (QApplicationPrivate::wheel_widget == nullptr && (phase == Qt::ScrollBegin || phase == Qt::ScrollUpdate))
                             QApplicationPrivate::wheel_widget = w;
                         break;
                     }
@@ -3230,15 +3196,8 @@ QT_WARNING_POP
                     w = w->parentWidget();
                 } while (w);
                 wheel->setAccepted(eventAccepted);
-            } else if (!spontaneous) {
-                // wheel_widget may forward the wheel event to a delegate widget,
-                // either directly or indirectly (e.g. QAbstractScrollArea will
-                // forward to its QScrollBars through viewportEvent()). In that
-                // case, the event will not be spontaneous but synthesized, so
-                // we can send it straight to the receiver.
-                d->notify_helper(w, wheel);
             } else {
-                // The phase is either ScrollUpdate or ScrollEnd, and wheel_widget
+                // The phase is either ScrollUpdate, ScrollMomentum, or ScrollEnd, and wheel_widget
                 // is set. Since it accepted the wheel event previously, we continue
                 // sending those events until we get a ScrollEnd, which signifies
                 // the end of the natural scrolling sequence.
@@ -3712,6 +3671,7 @@ static void grabForPopup(QWidget *popup)
 
 extern QWidget *qt_popup_down;
 extern bool qt_replay_popup_mouse_event;
+extern bool qt_popup_down_closed;
 
 void QApplicationPrivate::closePopup(QWidget *popup)
 {
@@ -3721,12 +3681,14 @@ void QApplicationPrivate::closePopup(QWidget *popup)
 
      if (popup == qt_popup_down) {
          qt_button_down = nullptr;
+         qt_popup_down_closed = true;
          qt_popup_down = nullptr;
      }
 
     if (QApplicationPrivate::popupWidgets->count() == 0) { // this was the last popup
         delete QApplicationPrivate::popupWidgets;
         QApplicationPrivate::popupWidgets = nullptr;
+        qt_popup_down_closed = false;
 
         if (popupGrabOk) {
             popupGrabOk = false;

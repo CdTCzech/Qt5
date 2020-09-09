@@ -142,7 +142,8 @@ const QString AssimpImporter::import(const QString &sourceFile, const QDir &save
     m_savePath.mkdir(".");
 
     // There is special handling needed for GLTF assets
-    if (m_sourceFile.completeSuffix() == QStringLiteral("gltf") || m_sourceFile.completeSuffix() == QStringLiteral("glb")) {
+    const auto extension = m_sourceFile.suffix().toLower();
+    if (extension == QStringLiteral("gltf") || extension == QStringLiteral("glb")) {
         // assimp bug #3009
         // Currently meshOffsets are not cleared for GLTF files
         // If a GLTF file is imported, we just reset the importer before reading a new gltf file
@@ -258,7 +259,7 @@ const QString AssimpImporter::import(const QString &sourceFile, const QDir &save
 
 
     QString targetFileName = savePath.absolutePath() + QDir::separator() +
-            QSSGQmlUtilities::qmlComponentName(sourceFileInfo.baseName()) +
+            QSSGQmlUtilities::qmlComponentName(sourceFileInfo.completeBaseName()) +
             QStringLiteral(".qml");
     QFile targetFile(targetFileName);
     if (!targetFile.open(QIODevice::WriteOnly)) {
@@ -282,8 +283,8 @@ const QString AssimpImporter::import(const QString &sourceFile, const QDir &save
 
 void AssimpImporter::writeHeader(QTextStream &output)
 {
-    output << "import QtQuick3D 1.15\n";
     output << "import QtQuick 2.15\n";
+    output << "import QtQuick3D 1.15\n";
     if (m_scene->HasAnimations())
         output << "import QtQuick.Timeline 1.0\n";
 }
@@ -1339,16 +1340,17 @@ void AssimpImporter::processAnimations(QTextStream &output)
                               keyframeStream, endFrameTime);
         }
 
-        output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("endFrame: ") << endFrameTime << QStringLiteral("\n");
+        int endFrameTimeInt = qCeil(endFrameTime);
+        output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("endFrame: ") << endFrameTimeInt << QStringLiteral("\n");
         output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("currentFrame: 0\n");
         // only the first set of animations is enabled for now.
         output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("enabled: ")
                << (animation == *m_animations.begin() ? QStringLiteral("true\n") : QStringLiteral("false\n"));
         output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("animations: [\n");
         output << QSSGQmlUtilities::insertTabs(3) << QStringLiteral("TimelineAnimation {\n");
-        output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("duration: ") << endFrameTime << QStringLiteral("\n");
+        output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("duration: ") << endFrameTimeInt << QStringLiteral("\n");
         output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("from: 0\n");
-        output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("to: ") << endFrameTime << QStringLiteral("\n");
+        output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("to: ") << endFrameTimeInt << QStringLiteral("\n");
         output << QSSGQmlUtilities::insertTabs(4) << QStringLiteral("running: true\n");
         output << QSSGQmlUtilities::insertTabs(3) << QStringLiteral("}\n");
         output << QSSGQmlUtilities::insertTabs(2) << QStringLiteral("]\n");
@@ -1568,6 +1570,9 @@ void AssimpImporter::processOptions(const QVariantMap &options)
         m_postProcessSteps = aiPostProcessSteps(m_postProcessSteps | aiProcess_RemoveComponent);
         m_importer->SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, removeComponents);
     }
+
+    bool preservePivots = checkBooleanOption(QStringLiteral("fbxPreservePivots"), optionsObject);
+    m_importer->SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, preservePivots);
 }
 
 bool AssimpImporter::checkBooleanOption(const QString &optionName, const QJsonObject &options)

@@ -439,6 +439,27 @@ void QSSGLayerRenderPreparationData::prepareImageForRender(QSSGRenderImage &inIm
     }
 }
 
+void QSSGLayerRenderPreparationData::setVertexInputPresence(const QSSGRenderableObjectFlags &renderableFlags,
+                                                            QSSGShaderDefaultMaterialKey &key)
+{
+    quint32 vertexAttribs = 0;
+    if (renderableFlags.hasAttributePosition())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Position;
+    if (renderableFlags.hasAttributeNormal())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Normal;
+    if (renderableFlags.hasAttributeTexCoord0())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::TexCoord0;
+    if (renderableFlags.hasAttributeTexCoord1())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::TexCoord1;
+    if (renderableFlags.hasAttributeTangent())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Tangent;
+    if (renderableFlags.hasAttributeBinormal())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Binormal;
+    if (renderableFlags.hasAttributeColor())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Color;
+    renderer->defaultMaterialShaderKeyProperties().m_vertexAttributes.setValue(key, vertexAttribs);
+}
+
 QSSGDefaultMaterialPreparationResult QSSGLayerRenderPreparationData::prepareDefaultMaterialForRender(
         QSSGRenderDefaultMaterial &inMaterial,
         QSSGRenderableObjectFlags &inExistingFlags,
@@ -467,6 +488,24 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderPreparationData::prepareDefa
 
     // alpha Mode
     renderer->defaultMaterialShaderKeyProperties().m_alphaMode.setValue(theGeneratedKey, theMaterial->alphaMode);
+
+    // vertex attribute presence flags
+    quint32 vertexAttribs = 0;
+    if (renderableFlags.hasAttributePosition())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Position;
+    if (renderableFlags.hasAttributeNormal())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Normal;
+    if (renderableFlags.hasAttributeTexCoord0())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::TexCoord0;
+    if (renderableFlags.hasAttributeTexCoord1())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::TexCoord1;
+    if (renderableFlags.hasAttributeTangent())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Tangent;
+    if (renderableFlags.hasAttributeBinormal())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Binormal;
+    if (renderableFlags.hasAttributeColor())
+        vertexAttribs |= QSSGShaderKeyVertexAttribute::Color;
+    renderer->defaultMaterialShaderKeyProperties().m_vertexAttributes.setValue(theGeneratedKey, vertexAttribs);
 
     if (theMaterial->iblProbe && checkLightProbeDirty(*theMaterial->iblProbe)) {
         renderer->prepareImageForIbl(*theMaterial->iblProbe);
@@ -631,6 +670,18 @@ QSSGDefaultMaterialPreparationResult QSSGLayerRenderPreparationData::prepareCust
     retval.firstImage = firstImage;
     if (retval.dirty || alreadyDirty)
         renderer->addMaterialDirtyClear(&inMaterial);
+
+    // register the custom material shaders with the dynamic object system if they
+    // are not registered already
+    const QSSGRef<QSSGDynamicObjectSystem> &theDynamicSystem(renderer->contextInterface()->dynamicObjectSystem());
+    for (auto shaderPath : inMaterial.shaders.keys())
+        theDynamicSystem->setShaderData(shaderPath,
+                                        inMaterial.shaders[shaderPath],
+                                        inMaterial.shaderInfo.type,
+                                        inMaterial.shaderInfo.version,
+                                        false,
+                                        false);
+
     return retval;
 }
 
@@ -671,14 +722,6 @@ bool QSSGLayerRenderPreparationData::prepareModelForRender(QSSGRenderModel &inMo
                     theMesh->subsets[i].bvhRoot = theMesh->bvh->roots.at(i);
             }
         }
-    } else {
-        // Check if there is BVH data, if so delete it
-        if (theMesh->bvh) {
-            delete theMesh->bvh;
-            theMesh->bvh = nullptr;
-            for (auto subset : theMesh->subsets)
-                subset.bvhRoot = nullptr;
-        }
     }
 
     const QSSGScopedLightsListScope lightsScope(globalLights, lightDirections, sourceLightDirections, inScopedLights);
@@ -713,6 +756,24 @@ bool QSSGLayerRenderPreparationData::prepareModelForRender(QSSGRenderModel &inMo
             // Casting and Receiving Shadows
             renderableFlags.setCastsShadows(inModel.castsShadows);
             renderableFlags.setReceivesShadows(inModel.receivesShadows);
+
+            for (const QByteArray &attr : qAsConst(theMesh->inputLayoutInputNames)) {
+                using namespace QSSGMeshUtilities;
+                if (attr == Mesh::getPositionAttrName())
+                    renderableFlags.setHasAttributePosition(true);
+                else if (attr == Mesh::getNormalAttrName())
+                    renderableFlags.setHasAttributeNormal(true);
+                else if (attr == Mesh::getUVAttrName())
+                    renderableFlags.setHasAttributeTexCoord0(true);
+                else if (attr == Mesh::getUV2AttrName())
+                    renderableFlags.setHasAttributeTexCoord1(true);
+                else if (attr == Mesh::getTexTanAttrName())
+                    renderableFlags.setHasAttributeTangent(true);
+                else if (attr == Mesh::getTexBinormalAttrName())
+                    renderableFlags.setHasAttributeBinormal(true);
+                else if (attr == Mesh::getColorAttrName())
+                    renderableFlags.setHasAttributeColor(true);
+            }
 
             QSSGRenderableObject *theRenderableObject = nullptr;
             QSSGRenderGraphObject *theMaterialObject = theSourceMaterialObject;
@@ -751,6 +812,9 @@ bool QSSGLayerRenderPreparationData::prepareModelForRender(QSSGRenderModel &inMo
 
             if (theMaterialObject->type == QSSGRenderGraphObject::Type::DefaultMaterial || theMaterialObject->type == QSSGRenderGraphObject::Type::PrincipledMaterial) {
                 QSSGRenderDefaultMaterial &theMaterial(static_cast<QSSGRenderDefaultMaterial &>(*theMaterialObject));
+                // vertexColor should be supported in both DefaultMaterial and PrincipleMaterial
+                // if the mesh has it.
+                theMaterial.vertexColorsEnabled = renderableFlags.hasAttributeColor();
                 QSSGDefaultMaterialPreparationResult theMaterialPrepResult(
                         prepareDefaultMaterialForRender(theMaterial, renderableFlags, subsetOpacity));
                 QSSGShaderDefaultMaterialKey theGeneratedKey = theMaterialPrepResult.materialKey;

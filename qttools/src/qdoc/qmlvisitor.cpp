@@ -188,7 +188,7 @@ bool QmlDocVisitor::applyDocumentation(QQmlJS::SourceLocation location, Node *no
                         }
                     } else
                         qDebug() << "  FAILED TO PARSE QML OR JS PROPERTY:" << topic << args;
-                } else if (topic.endsWith(QLatin1String("method"))) {
+                } else if (topic.endsWith(QLatin1String("method")) || topic == COMMAND_QMLSIGNAL) {
                     if (node->isFunction()) {
                         FunctionNode *fn = static_cast<FunctionNode *>(node);
                         QmlSignatureParser qsp(fn, args, doc.location());
@@ -686,7 +686,14 @@ bool QmlDocVisitor::visit(QQmlJS::AST::FunctionDeclaration *fd)
         if (formals) {
             QQmlJS::AST::FormalParameterList *fp = formals;
             do {
-                parameters.append(QString(), QString(), fp->element->bindingIdentifier.toString());
+                QString defaultValue;
+                auto initializer = fp->element->initializer;
+                if (initializer) {
+                    auto loc = initializer->firstSourceLocation();
+                    defaultValue = document.mid(loc.begin(), loc.length);
+                }
+                parameters.append(QString(), fp->element->bindingIdentifier.toString(),
+                        defaultValue);
                 fp = fp->next;
             } while (fp && fp != formals);
         }

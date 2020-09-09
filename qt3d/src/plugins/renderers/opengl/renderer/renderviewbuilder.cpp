@@ -76,26 +76,29 @@ public:
     void operator()()
     {
         // Split commands to build among jobs
-        QMutexLocker lock(m_renderer->cache()->mutex());
+
         // Rebuild RenderCommands for all entities in RV (ignoring filtering)
         RendererCache *cache = m_renderer->cache();
+        QMutexLocker lock(cache->mutex());
+
+        Q_ASSERT(cache->leafNodeCache.contains(m_leafNode));
+        // The cache leaf should already have been created so we don't need to protect the access
         const RendererCache::LeafNodeData &dataCacheForLeaf = cache->leafNodeCache[m_leafNode];
         RenderView *rv = m_renderViewInitializer->renderView();
         const auto entities = !rv->isCompute() ? cache->renderableEntities : cache->computeEntities;
 
         rv->setMaterialParameterTable(dataCacheForLeaf.materialParameterGatherer);
 
-        lock.unlock();
-
         // Split among the ideal number of command builders
         const int jobCount = m_renderViewCommandBuilderJobs.size();
-        const int idealPacketSize = std::min(std::max(10, entities.size() / jobCount), entities.size());
+        const int entityCount = entities.size();
+        const int idealPacketSize = std::min(std::max(10, entityCount / jobCount), entityCount);
         // Try to split work into an ideal number of workers
-        const int m = findIdealNumberOfWorkers(entities.size(), idealPacketSize, jobCount);
+        const int m = findIdealNumberOfWorkers(entityCount, idealPacketSize, jobCount);
 
         for (int i = 0; i < m; ++i) {
             const RenderViewCommandBuilderJobPtr renderViewCommandBuilder = m_renderViewCommandBuilderJobs.at(i);
-            const int count = (i == m - 1) ? entities.size() - (i * idealPacketSize) : idealPacketSize;
+            const int count = (i == m - 1) ? entityCount - (i * idealPacketSize) : idealPacketSize;
             renderViewCommandBuilder->setEntities(entities, i * idealPacketSize, count);
         }
     }
@@ -112,10 +115,12 @@ class SyncRenderViewPostCommandUpdate
 public:
     explicit SyncRenderViewPostCommandUpdate(const RenderViewInitializerJobPtr &renderViewJob,
                                              const QVector<RenderViewCommandUpdaterJobPtr> &renderViewCommandUpdateJobs,
-                                             Renderer *renderer)
+                                             Renderer *renderer,
+                                             FrameGraphNode *leafNode)
         : m_renderViewJob(renderViewJob)
         , m_renderViewCommandUpdaterJobs(renderViewCommandUpdateJobs)
         , m_renderer(renderer)
+        , m_leafNode(leafNode)
     {}
 
     void operator()()
@@ -123,16 +128,35 @@ public:
         // Append all the commands and sort them
         RenderView *rv = m_renderViewJob->renderView();
 
-        const EntityRenderCommandDataPtr commandData = m_renderViewCommandUpdaterJobs.first()->renderables();
+        if (!rv->noDraw()) {
+            RendererCache *cache = m_renderer->cache();
+            RendererCache::LeafNodeData &writableCacheForLeaf = cache->leafNodeCache[m_leafNode];
 
-        if (commandData) {
-            const QVector<RenderCommand> commands = std::move(commandData->commands);
-            rv->setCommands(commands);
-
-            // TO DO: Find way to store commands once or at least only when required
-            // Sort the commands
+            // Sort command on RenderView
             rv->sort();
+
+            // Flip between the 2 EntityRenderCommandDataView on the leaf node case
+            {
+                const int currentViewIdx = writableCacheForLeaf.viewIdx;
+                const int nextViewIdx = 1 - currentViewIdx;
+                EntityRenderCommandDataViewPtr currentDataView = writableCacheForLeaf.filteredRenderCommandDataViews[currentViewIdx];
+
+                // In case the next view has yet to be initialized, we make a copy of the current
+                // view
+                if (writableCacheForLeaf.filteredRenderCommandDataViews[nextViewIdx].isNull()) {
+                    EntityRenderCommandDataViewPtr nextDataView = EntityRenderCommandDataViewPtr::create();
+                    nextDataView->data = currentDataView->data;
+                    nextDataView->indices = currentDataView->indices;
+                    writableCacheForLeaf.filteredRenderCommandDataViews[nextViewIdx] = nextDataView;
+                }
+                // Flip index for next frame
+                writableCacheForLeaf.viewIdx = nextViewIdx;
+            }
         }
+
+        // TO DO: Record the commandData information with the idea of being to
+        // reuse it next frame without having to allocate everything again and
+        // minimizing the uniform updates we need to make
 
         // Enqueue our fully populated RenderView with the RenderThread
         m_renderer->enqueueRenderView(rv, m_renderViewJob->submitOrderIndex());
@@ -142,6 +166,7 @@ private:
     RenderViewInitializerJobPtr m_renderViewJob;
     QVector<RenderViewCommandUpdaterJobPtr> m_renderViewCommandUpdaterJobs;
     Renderer *m_renderer;
+    FrameGraphNode *m_leafNode;
 };
 
 class SyncPreFrustumCulling
@@ -223,6 +248,8 @@ private:
     QVector<MaterialParameterGathererJobPtr> m_materialGathererJobs;
     QVector<RenderViewCommandUpdaterJobPtr> m_renderViewCommandUpdaterJobs;
     QVector<RenderViewCommandBuilderJobPtr> m_renderViewCommandBuilderJobs;
+    Renderer *m_renderer;
+    FrameGraphNode *m_leafNode;
 };
 
 class SyncRenderViewPreCommandUpdate
@@ -236,7 +263,7 @@ public:
                                             const QVector<RenderViewCommandBuilderJobPtr> &renderViewCommandBuilderJobs,
                                             Renderer *renderer,
                                             FrameGraphNode *leafNode,
-                                            bool fullCommandRebuild)
+                                            RebuildFlagSet rebuildFlags)
         : m_renderViewJob(renderViewJob)
         , m_frustumCullingJob(frustumCullingJob)
         , m_filterProximityJob(filterProximityJob)
@@ -245,7 +272,7 @@ public:
         , m_renderViewCommandBuilderJobs(renderViewCommandBuilderJobs)
         , m_renderer(renderer)
         , m_leafNode(leafNode)
-        , m_fullRebuild(fullCommandRebuild)
+        , m_rebuildFlags(rebuildFlags)
     {}
 
     void operator()()
@@ -261,13 +288,39 @@ public:
             QMutexLocker lock(cache->mutex());
             Q_ASSERT(cache->leafNodeCache.contains(m_leafNode));
 
+            // We don't need to protect the cache access as
+            // 1) The cache leaf is created
+            // 2) We are only reading conccurently the cache values that are shared across all RV
+            // 3) Each instance of this job is reading and writing in its own cache leaf so there's
+            // no conflict
+
             const bool isDraw = !rv->isCompute();
-            const RendererCache::LeafNodeData &dataCacheForLeaf = cache->leafNodeCache[m_leafNode];
+            RendererCache::LeafNodeData &cacheForLeaf = cache->leafNodeCache[m_leafNode];
+
+            const bool fullRebuild = m_rebuildFlags.testFlag(RebuildFlag::FullCommandRebuild);
+            const bool layerFilteringRebuild = m_rebuildFlags.testFlag(RebuildFlag::LayerCacheRebuild);
+            const bool lightsCacheRebuild = m_rebuildFlags.testFlag(RebuildFlag::LightCacheRebuild);
+            const bool cameraDirty = cacheForLeaf.viewProjectionMatrix != rv->viewProjectionMatrix();
+            const bool hasProximityFilter = !rv->proximityFilterIds().empty();
+            const bool commandFilteringRequired =
+                    fullRebuild ||
+                    layerFilteringRebuild ||
+                    lightsCacheRebuild ||
+                    cameraDirty ||
+                    hasProximityFilter ||
+                    cacheForLeaf.requestFilteringAtNextFrame;
+
+            // Reset flag on leaf
+            cacheForLeaf.requestFilteringAtNextFrame = false;
+
+            // If we have no filteredRenderCommandDataViews then we should have fullRebuild set to true
+            // otherwise something is wrong
+            Q_ASSERT(fullRebuild || cacheForLeaf.filteredRenderCommandDataViews[cacheForLeaf.viewIdx]);
 
             // Rebuild RenderCommands if required
             // This should happen fairly infrequently (FrameGraph Change, Geometry/Material change)
             // and allow to skip that step most of the time
-            if (m_fullRebuild) {
+            if (fullRebuild) {
                 EntityRenderCommandData commandData;
                 // Reduction
                 {
@@ -279,40 +332,73 @@ public:
                         commandData += std::move(renderViewCommandBuilder->commandData());
                 }
 
-
                 // Store new cache
-                RendererCache::LeafNodeData &writableCacheForLeaf = cache->leafNodeCache[m_leafNode];
-                writableCacheForLeaf.renderCommandData = std::move(commandData);
+                EntityRenderCommandDataViewPtr dataView = EntityRenderCommandDataViewPtr::create();
+                dataView->data = std::move(commandData);
+                // Store the update dataView
+                cacheForLeaf.filteredRenderCommandDataViews[cacheForLeaf.viewIdx] = dataView;
+                // Clear the other dataView
+                cacheForLeaf.filteredRenderCommandDataViews[1 - cacheForLeaf.viewIdx].clear();
             }
-            const EntityRenderCommandData commandData = dataCacheForLeaf.renderCommandData;
-            const QVector<Entity *> filteredEntities = dataCacheForLeaf.filterEntitiesByLayer;
-            QVector<Entity *> renderableEntities = isDraw ? cache->renderableEntities : cache->computeEntities;
-            QVector<LightSource> lightSources = cache->gatheredLights;
 
-            rv->setMaterialParameterTable(dataCacheForLeaf.materialParameterGatherer);
+            // Should be fairly infrequent
+            if (layerFilteringRebuild || fullRebuild) {
+                // Filter out renderable entities that weren't selected by the layer filters and store that in cache
+                cacheForLeaf.layeredFilteredRenderables = RenderViewBuilder::entitiesInSubset(
+                            isDraw ? cache->renderableEntities : cache->computeEntities,
+                            cacheForLeaf.filterEntitiesByLayer);
+                // Set default value for filteredAndCulledRenderables
+                if (isDraw)
+                    cacheForLeaf.filteredAndCulledRenderables = cacheForLeaf.layeredFilteredRenderables;
+            }
+
+            // Should be fairly infrequent
+            if (lightsCacheRebuild) {
+                // Filter out renderable entities that weren't selected by the
+                // layer filters and store that in cache
+                const QVector<Entity *> &layeredFilteredEntities = cacheForLeaf.filterEntitiesByLayer;
+                QVector<LightSource> filteredLightSources = cache->gatheredLights;
+                for (int i = 0; i < filteredLightSources.count(); ++i) {
+                    if (!layeredFilteredEntities.contains(filteredLightSources[i].entity))
+                        filteredLightSources.removeAt(i--);
+                }
+                cacheForLeaf.layeredFilteredLightSources = filteredLightSources;
+            }
+
+            // This is likely very frequent
+            if (cameraDirty) {
+                // Record the updated viewProjectionMatrix in the cache to allow check to be performed
+                // next frame
+                cacheForLeaf.viewProjectionMatrix = rv->viewProjectionMatrix();
+
+                // Filter out frustum culled entity for drawable entities and store in cache
+                if (isDraw && rv->frustumCulling()) {
+                    cacheForLeaf.filteredAndCulledRenderables = RenderViewBuilder::entitiesInSubset(
+                                cacheForLeaf.layeredFilteredRenderables,
+                                m_frustumCullingJob->visibleEntities());
+                }
+            }
+
+            rv->setMaterialParameterTable(cacheForLeaf.materialParameterGatherer);
             rv->setEnvironmentLight(cache->environmentLight);
-            lock.unlock();
-            ///////// END OF CACHE LOCKED ////////////
-
-            // Filter out entities that weren't selected by the layer filters
-            // Remove all entities from the compute and renderable vectors that aren't in the filtered layer vector
-            renderableEntities = RenderViewBuilder::entitiesInSubset(renderableEntities, filteredEntities);
 
             // Set the light sources, with layer filters applied.
-            for (int i = 0; i < lightSources.count(); ++i) {
-                if (!filteredEntities.contains(lightSources[i].entity))
-                    lightSources.removeAt(i--);
-            }
-            rv->setLightSources(lightSources);
+            rv->setLightSources(cacheForLeaf.layeredFilteredLightSources);
 
+            QVector<Entity *> renderableEntities = isDraw ? cacheForLeaf.filteredAndCulledRenderables : cacheForLeaf.layeredFilteredRenderables;
+
+            // TO DO: Find a way to do that only if proximity entities has changed
             if (isDraw) {
-                // Filter out frustum culled entity for drawable entities
-                if (rv->frustumCulling())
-                    renderableEntities = RenderViewBuilder::entitiesInSubset(renderableEntities, m_frustumCullingJob->visibleEntities());
                 // Filter out entities which didn't satisfy proximity filtering
-                if (!rv->proximityFilterIds().empty())
-                    renderableEntities = RenderViewBuilder::entitiesInSubset(renderableEntities, m_filterProximityJob->filteredEntities());
+                if (hasProximityFilter)
+                    renderableEntities = RenderViewBuilder::entitiesInSubset(renderableEntities,
+                                                                             m_filterProximityJob->filteredEntities());
             }
+
+            EntityRenderCommandDataViewPtr filteredCommandData = cacheForLeaf.filteredRenderCommandDataViews[cacheForLeaf.viewIdx];
+
+            // Set RenderCommandDataView on RV (will be used later on to sort commands ...)
+            rv->setRenderCommandDataView(filteredCommandData);
 
             // Early return in case we have nothing to filter
             if (renderableEntities.size() == 0)
@@ -320,42 +406,57 @@ public:
 
             // Filter out Render commands for which the Entity wasn't selected because
             // of frustum, proximity or layer filtering
-            EntityRenderCommandDataPtr filteredCommandData = EntityRenderCommandDataPtr::create();
-            filteredCommandData->reserve(renderableEntities.size());
-            // Because dataCacheForLeaf.renderableEntities or computeEntities are sorted
-            // What we get out of EntityRenderCommandData is also sorted by Entity
-            auto eIt = renderableEntities.cbegin();
-            const auto eEnd = renderableEntities.cend();
-            int cIt = 0;
-            const int cEnd = commandData.size();
+            if (commandFilteringRequired) {
+                const std::vector<Entity *> &entities = filteredCommandData->data.entities;
+                // Because cacheForLeaf.renderableEntities or computeEntities are sorted
+                // What we get out of EntityRenderCommandData is also sorted by Entity
+                auto eIt = renderableEntities.cbegin();
+                const auto eEnd = renderableEntities.cend();
+                size_t cIt = 0;
+                const size_t cEnd = entities.size();
 
-            while (eIt != eEnd) {
-                const Entity *targetEntity = *eIt;
-                // Advance until we have commands whose Entity has a lower address
-                // than the selected filtered entity
-                while (cIt != cEnd && commandData.entities.at(cIt) < targetEntity)
-                    ++cIt;
+                std::vector<size_t> filteredCommandIndices;
+                filteredCommandIndices.reserve(renderableEntities.size());
 
-                // Push pointers to command data for all commands that match the
-                // entity
-                while (cIt != cEnd && commandData.entities.at(cIt) == targetEntity) {
-                    filteredCommandData->push_back(commandData.entities.at(cIt),
-                                                   commandData.commands.at(cIt),
-                                                   commandData.passesData.at(cIt));
-                    ++cIt;
+                while (eIt != eEnd) {
+                    const Entity *targetEntity = *eIt;
+                    // Advance until we have commands whose Entity has a lower address
+                    // than the selected filtered entity
+                    while (cIt != cEnd && entities[cIt] < targetEntity)
+                        ++cIt;
+
+                    // Push pointers to command data for all commands that match the
+                    // entity
+                    while (cIt != cEnd && entities[cIt] == targetEntity) {
+                        filteredCommandIndices.push_back(cIt);
+                        ++cIt;
+                    }
+                    ++eIt;
                 }
-                ++eIt;
+
+                // Store result in cache
+                cacheForLeaf.filteredRenderCommandDataViews[cacheForLeaf.viewIdx]->indices = std::move(filteredCommandIndices);
+
+                // Request filtering at next frame (indices for view0 and view1
+                // could mistmatch if something is dirty for frame 0 and not at
+                // frame 1 (given we have 2 views we alternate with)
+                cacheForLeaf.requestFilteringAtNextFrame = true;
             }
 
-            // Split among the number of command builders
+            // Split among the number of command updaters
             const int jobCount = m_renderViewCommandUpdaterJobs.size();
-            const int idealPacketSize = std::min(std::max(10, filteredCommandData->size() / jobCount), filteredCommandData->size());
-            const int m = findIdealNumberOfWorkers(filteredCommandData->size(), idealPacketSize, jobCount);
+            const int commandCount = filteredCommandData->size();
+            const int idealPacketSize = std::min(std::max(10, commandCount), commandCount);
+            const int m = findIdealNumberOfWorkers(commandCount, idealPacketSize, jobCount);
 
             for (int i = 0; i < m; ++i) {
-                const RenderViewCommandUpdaterJobPtr renderViewCommandBuilder = m_renderViewCommandUpdaterJobs.at(i);
-                const int count = (i == m - 1) ? filteredCommandData->size() - (i * idealPacketSize) : idealPacketSize;
-                renderViewCommandBuilder->setRenderables(filteredCommandData, i * idealPacketSize, count);
+                // TO DO: Based on whether we had to update the commands
+                // we should be able to know what needs to be recomputed
+                // -> lights/standard uniforms ... might no have to be set over and over again
+                // if they are identical
+                const RenderViewCommandUpdaterJobPtr &renderViewCommandUpdater = m_renderViewCommandUpdaterJobs.at(i);
+                const size_t count = (i == m - 1) ? commandCount - (i * idealPacketSize) : idealPacketSize;
+                renderViewCommandUpdater->setRenderablesSubView({filteredCommandData, size_t(i * idealPacketSize), count});
             }
         }
     }
@@ -369,7 +470,7 @@ private:
     QVector<RenderViewCommandBuilderJobPtr> m_renderViewCommandBuilderJobs;
     Renderer *m_renderer;
     FrameGraphNode *m_leafNode;
-    bool m_fullRebuild;
+    RebuildFlagSet m_rebuildFlags;
 };
 
 class SetClearDrawBufferIndex
@@ -408,10 +509,11 @@ public:
     void operator()()
     {
         QMutexLocker lock(m_renderer->cache()->mutex());
-        // Save the filtered by layer subset into the cache
-        const QVector<Entity *> filteredEntities = m_filterEntityByLayerJob->filteredEntities();
+        Q_ASSERT(m_renderer->cache()->leafNodeCache.contains(m_leafNode));
+        // The cache leaf should already have been created so we don't need to protect the access
         RendererCache::LeafNodeData &dataCacheForLeaf = m_renderer->cache()->leafNodeCache[m_leafNode];
-        dataCacheForLeaf.filterEntitiesByLayer = filteredEntities;
+        // Save the filtered by layer subset into the cache
+        dataCacheForLeaf.filterEntitiesByLayer = std::move(m_filterEntityByLayerJob->filteredEntities());
     }
 
 private:
@@ -434,6 +536,8 @@ public:
 
     void operator()()
     {
+        // The cache leaf was created by SyncRenderViewPostInitialization on which we depend
+        // so we don't need to protect the access
         QMutexLocker lock(m_renderer->cache()->mutex());
         RendererCache::LeafNodeData &dataCacheForLeaf = m_renderer->cache()->leafNodeCache[m_leafNode];
         dataCacheForLeaf.materialParameterGatherer.clear();
@@ -454,9 +558,6 @@ RenderViewBuilder::RenderViewBuilder(Render::FrameGraphNode *leafNode, int rende
     : m_leafNode(leafNode)
     , m_renderViewIndex(renderViewIndex)
     , m_renderer(renderer)
-    , m_layerCacheNeedsToBeRebuilt(false)
-    , m_materialGathererCacheNeedsToBeRebuilt(false)
-    , m_renderCommandCacheNeedsToBeRebuilt(false)
     , m_renderViewJob(RenderViewInitializerJobPtr::create())
     , m_filterEntityByLayerJob()
     , m_frustumCullingJob(new Render::FrustumCullingJob())
@@ -552,7 +653,8 @@ void RenderViewBuilder::prepareJobs()
     m_filterProximityJob->setManager(m_renderer->nodeManagers());
     m_frustumCullingJob->setRoot(m_renderer->sceneRoot());
 
-    if (m_renderCommandCacheNeedsToBeRebuilt) {
+    const bool commandsNeedRebuild = m_rebuildFlags.testFlag(RebuildFlag::FullCommandRebuild);
+    if (commandsNeedRebuild) {
         m_renderViewCommandBuilderJobs.reserve(m_optimalParallelJobCount);
         for (auto i = 0; i < m_optimalParallelJobCount; ++i) {
             auto renderViewCommandBuilder = Render::OpenGL::RenderViewCommandBuilderJobPtr::create();
@@ -575,20 +677,25 @@ void RenderViewBuilder::prepareJobs()
     for (auto i = 0; i < m_optimalParallelJobCount; ++i) {
         auto renderViewCommandUpdater = Render::OpenGL::RenderViewCommandUpdaterJobPtr::create();
         renderViewCommandUpdater->setRenderer(m_renderer);
+        renderViewCommandUpdater->setRebuildFlags(m_rebuildFlags);
         m_renderViewCommandUpdaterJobs.push_back(renderViewCommandUpdater);
     }
 
-    if (m_materialGathererCacheNeedsToBeRebuilt) {
+    const bool materialCacheNeedsRebuild = m_rebuildFlags.testFlag(RebuildFlag::MaterialCacheRebuild);
+    if (materialCacheNeedsRebuild) {
         // Since Material gathering is an heavy task, we split it
-        const QVector<HMaterial> materialHandles = m_renderer->nodeManagers()->materialManager()->activeHandles();
-        if (materialHandles.count()) {
-            const int elementsPerJob =  qMax(materialHandles.size() / m_optimalParallelJobCount, 1);
+        const std::vector<HMaterial> &materialHandles = m_renderer->nodeManagers()->materialManager()->activeHandles();
+        const size_t handlesCount = materialHandles.size();
+        if (handlesCount) {
             m_materialGathererJobs.reserve(m_optimalParallelJobCount);
-            int elementCount = 0;
-            while (elementCount < materialHandles.size()) {
+            const size_t elementsPerJob =  std::max(handlesCount / m_optimalParallelJobCount, size_t(1));
+            size_t elementCount = 0;
+            while (elementCount < handlesCount) {
                 auto materialGatherer = MaterialParameterGathererJobPtr::create();
                 materialGatherer->setNodeManagers(m_renderer->nodeManagers());
-                materialGatherer->setHandles(materialHandles.mid(elementCount, elementsPerJob));
+                // TO DO: Candidate for std::span if C++20
+                materialGatherer->setHandles({materialHandles.begin() + elementCount,
+                                              materialHandles.begin() + std::min(elementCount + elementsPerJob, handlesCount)});
                 m_materialGathererJobs.push_back(materialGatherer);
 
                 elementCount += elementsPerJob;
@@ -600,7 +707,8 @@ void RenderViewBuilder::prepareJobs()
                                                              JobTypes::SyncMaterialGatherer);
     }
 
-    if (m_layerCacheNeedsToBeRebuilt) {
+    const bool layerCacheNeedsRebuild = m_rebuildFlags.testFlag(RebuildFlag::LayerCacheRebuild);
+    if (layerCacheNeedsRebuild) {
         m_filterEntityByLayerJob = Render::FilterLayerEntityJobPtr::create();
         m_filterEntityByLayerJob->setManager(m_renderer->nodeManagers());
         m_syncFilterEntityByLayerJob = CreateSynchronizerJobPtr(SyncFilterEntityByLayer(m_filterEntityByLayerJob,
@@ -617,12 +725,13 @@ void RenderViewBuilder::prepareJobs()
                                                                                                   m_renderViewCommandBuilderJobs,
                                                                                                   m_renderer,
                                                                                                   m_leafNode,
-                                                                                                  m_renderCommandCacheNeedsToBeRebuilt),
+                                                                                                  m_rebuildFlags),
                                                                    JobTypes::SyncRenderViewPreCommandUpdate);
 
     m_syncRenderViewPostCommandUpdateJob = CreateSynchronizerJobPtr(SyncRenderViewPostCommandUpdate(m_renderViewJob,
                                                                                                     m_renderViewCommandUpdaterJobs,
-                                                                                                    m_renderer),
+                                                                                                    m_renderer,
+                                                                                                    m_leafNode),
                                                                     JobTypes::SyncRenderViewPostCommandUpdate);
 
     m_syncRenderViewPostInitializationJob = CreateSynchronizerJobPtr(SyncRenderViewPostInitialization(m_renderViewJob,
@@ -691,12 +800,16 @@ QVector<Qt3DCore::QAspectJobPtr> RenderViewBuilder::buildJobHierachy() const
 
     jobs.push_back(m_syncRenderViewPostInitializationJob); // Step 2
 
-    if (m_renderCommandCacheNeedsToBeRebuilt) { // Step 3
+    const bool commandsNeedRebuild = m_rebuildFlags.testFlag(RebuildFlag::FullCommandRebuild);
+    const bool materialCacheNeedsRebuild = m_rebuildFlags.testFlag(RebuildFlag::MaterialCacheRebuild);
+    const bool layerCacheNeedsRebuild = m_rebuildFlags.testFlag(RebuildFlag::LayerCacheRebuild);
+
+    if (commandsNeedRebuild) { // Step 3
         m_syncRenderViewPreCommandBuildingJob->addDependency(m_renderer->computableEntityFilterJob());
         m_syncRenderViewPreCommandBuildingJob->addDependency(m_renderer->renderableEntityFilterJob());
         m_syncRenderViewPreCommandBuildingJob->addDependency(m_syncRenderViewPostInitializationJob);
 
-        if (m_materialGathererCacheNeedsToBeRebuilt)
+        if (materialCacheNeedsRebuild)
             m_syncRenderViewPreCommandBuildingJob->addDependency(m_syncMaterialGathererJob);
 
         jobs.push_back(m_syncRenderViewPreCommandBuildingJob);
@@ -708,7 +821,7 @@ QVector<Qt3DCore::QAspectJobPtr> RenderViewBuilder::buildJobHierachy() const
         }
     }
 
-    if (m_layerCacheNeedsToBeRebuilt) {
+    if (layerCacheNeedsRebuild) {
         m_filterEntityByLayerJob->addDependency(updateEntityLayersJob);
         m_filterEntityByLayerJob->addDependency(m_syncRenderViewPostInitializationJob);
         m_filterEntityByLayerJob->addDependency(updateTreeEnabledJob);
@@ -723,7 +836,7 @@ QVector<Qt3DCore::QAspectJobPtr> RenderViewBuilder::buildJobHierachy() const
     jobs.push_back(m_filterProximityJob); // Step 3
     jobs.push_back(m_setClearDrawBufferIndexJob); // Step 3
 
-    if (m_materialGathererCacheNeedsToBeRebuilt) {
+    if (materialCacheNeedsRebuild) {
         for (const auto &materialGatherer : qAsConst(m_materialGathererJobs))  {
             materialGatherer->addDependency(m_syncRenderViewPostInitializationJob);
             materialGatherer->addDependency(m_renderer->introspectShadersJob());
@@ -760,32 +873,42 @@ int RenderViewBuilder::renderViewIndex() const
 
 void RenderViewBuilder::setLayerCacheNeedsToBeRebuilt(bool needsToBeRebuilt)
 {
-    m_layerCacheNeedsToBeRebuilt = needsToBeRebuilt;
+    m_rebuildFlags.setFlag(RebuildFlag::LayerCacheRebuild, needsToBeRebuilt);
 }
 
 bool RenderViewBuilder::layerCacheNeedsToBeRebuilt() const
 {
-    return m_layerCacheNeedsToBeRebuilt;
+    return m_rebuildFlags.testFlag(RebuildFlag::LayerCacheRebuild);
 }
 
 void RenderViewBuilder::setMaterialGathererCacheNeedsToBeRebuilt(bool needsToBeRebuilt)
 {
-    m_materialGathererCacheNeedsToBeRebuilt = needsToBeRebuilt;
+    m_rebuildFlags.setFlag(RebuildFlag::MaterialCacheRebuild, needsToBeRebuilt);
 }
 
 bool RenderViewBuilder::materialGathererCacheNeedsToBeRebuilt() const
 {
-    return m_materialGathererCacheNeedsToBeRebuilt;
+    return m_rebuildFlags.testFlag(RebuildFlag::MaterialCacheRebuild);
 }
 
 void RenderViewBuilder::setRenderCommandCacheNeedsToBeRebuilt(bool needsToBeRebuilt)
 {
-    m_renderCommandCacheNeedsToBeRebuilt = needsToBeRebuilt;
+    m_rebuildFlags.setFlag(RebuildFlag::FullCommandRebuild, needsToBeRebuilt);
 }
 
 bool RenderViewBuilder::renderCommandCacheNeedsToBeRebuilt() const
 {
-    return m_renderCommandCacheNeedsToBeRebuilt;
+    return m_rebuildFlags.testFlag(RebuildFlag::FullCommandRebuild);
+}
+
+void RenderViewBuilder::setLightCacheNeedsToBeRebuilt(bool needsToBeRebuilt)
+{
+    m_rebuildFlags.setFlag(RebuildFlag::LightCacheRebuild, needsToBeRebuilt);
+}
+
+bool RenderViewBuilder::lightCacheNeedsToBeRebuilt() const
+{
+    return m_rebuildFlags.testFlag(RebuildFlag::LightCacheRebuild);
 }
 
 int RenderViewBuilder::defaultJobCount()

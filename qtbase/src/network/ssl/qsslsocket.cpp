@@ -997,8 +997,10 @@ void QSslSocket::setSslConfiguration(const QSslConfiguration &configuration)
     // if the CA certificates were set explicitly (either via
     // QSslConfiguration::setCaCertificates() or QSslSocket::setCaCertificates(),
     // we cannot load the certificates on demand
-    if (!configuration.d->allowRootCertOnDemandLoading)
+    if (!configuration.d->allowRootCertOnDemandLoading) {
         d->allowRootCertOnDemandLoading = false;
+        d->configuration.allowRootCertOnDemandLoading = false;
+    }
 }
 
 /*!
@@ -2250,6 +2252,7 @@ void QSslSocketPrivate::init()
     writeBuffer.clear();
     configuration.peerCertificate.clear();
     configuration.peerCertificateChain.clear();
+    fetchAuthorityInformation = false;
 }
 
 /*!
@@ -2402,6 +2405,8 @@ void QSslSocketPrivate::addDefaultCaCertificate(const QSslCertificate &cert)
 {
     QSslSocketPrivate::ensureInitialized();
     QMutexLocker locker(&globalData()->mutex);
+    if (globalData()->config->caCertificates.contains(cert))
+        return;
     globalData()->config.detach();
     globalData()->config->caCertificates += cert;
     globalData()->dtlsConfig.detach();

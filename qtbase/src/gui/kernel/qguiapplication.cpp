@@ -1867,6 +1867,60 @@ int QGuiApplication::exec()
     return QCoreApplication::exec();
 }
 
+void QGuiApplicationPrivate::captureGlobalModifierState(QEvent *e)
+{
+    if (e->spontaneous()) {
+        // Capture the current mouse and keyboard states. Doing so here is
+        // required in order to support Qt Test synthesized events. Real mouse
+        // and keyboard state updates from the platform plugin are managed by
+        // QGuiApplicationPrivate::process(Mouse|Wheel|Key|Touch|Tablet)Event();
+        // ### FIXME: Qt Test should not call qapp->notify(), but rather route
+        // the events through the proper QPA interface. This is required to
+        // properly generate all other events such as enter/leave etc.
+        switch (e->type()) {
+        case QEvent::MouseButtonPress: {
+            QMouseEvent *me = static_cast<QMouseEvent *>(e);
+            QGuiApplicationPrivate::modifier_buttons = me->modifiers();
+            QGuiApplicationPrivate::mouse_buttons |= me->button();
+            break;
+        }
+        case QEvent::MouseButtonDblClick: {
+            QMouseEvent *me = static_cast<QMouseEvent *>(e);
+            QGuiApplicationPrivate::modifier_buttons = me->modifiers();
+            QGuiApplicationPrivate::mouse_buttons |= me->button();
+            break;
+        }
+        case QEvent::MouseButtonRelease: {
+            QMouseEvent *me = static_cast<QMouseEvent *>(e);
+            QGuiApplicationPrivate::modifier_buttons = me->modifiers();
+            QGuiApplicationPrivate::mouse_buttons &= ~me->button();
+            break;
+        }
+        case QEvent::KeyPress:
+        case QEvent::KeyRelease:
+        case QEvent::MouseMove:
+#if QT_CONFIG(wheelevent)
+        case QEvent::Wheel:
+#endif
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::TouchEnd:
+#if QT_CONFIG(tabletevent)
+        case QEvent::TabletMove:
+        case QEvent::TabletPress:
+        case QEvent::TabletRelease:
+#endif
+        {
+            QInputEvent *ie = static_cast<QInputEvent *>(e);
+            QGuiApplicationPrivate::modifier_buttons = ie->modifiers();
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
+
 /*! \reimp
 */
 bool QGuiApplication::notify(QObject *object, QEvent *event)
@@ -1875,6 +1929,8 @@ bool QGuiApplication::notify(QObject *object, QEvent *event)
         if (QGuiApplicationPrivate::sendQWindowEventToQPlatformWindow(static_cast<QWindow *>(object), event))
             return true; // Platform plugin ate the event
     }
+
+    QGuiApplicationPrivate::captureGlobalModifierState(event);
 
     return QCoreApplication::notify(object, event);
 }
@@ -2093,6 +2149,13 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
                 moveEvent.flags |= QWindowSystemInterfacePrivate::WindowSystemEvent::Synthetic;
             processMouseEvent(&moveEvent); // mouse move excluding state change
             processMouseEvent(e); // the original mouse event
+            return;
+        }
+        if (mouseMove && !positionChanged) {
+            // On Windows, and possibly other platforms, a touchpad can send a mouse move
+            // that does not change position, between a press and a release. This may
+            // confuse applications, so we always filter out these mouse events for
+            // consistent behavior among platforms.
             return;
         }
     } else {
@@ -3115,14 +3178,7 @@ void QGuiApplicationPrivate::processScreenGeometryChange(QWindowSystemInterfaceP
             updateFilteredScreenOrientation(s);
     }
 
-    if (availableGeometryChanged)
-        emit s->availableGeometryChanged(s->availableGeometry());
-
-    if (geometryChanged || availableGeometryChanged) {
-        const auto siblings = s->virtualSiblings();
-        for (QScreen* sibling : siblings)
-            emit sibling->virtualGeometryChanged(sibling->virtualGeometry());
-    }
+    s->d_func()->emitGeometryChangeSignals(geometryChanged, availableGeometryChanged);
 
     resetCachedDevicePixelRatio();
 }
@@ -3133,6 +3189,8 @@ void QGuiApplicationPrivate::processScreenLogicalDotsPerInchChange(QWindowSystem
     if (QCoreApplication::startingUp())
         return;
 
+    QHighDpiScaling::updateHighDpiScaling();
+
     if (!e->screen)
         return;
 
@@ -3140,6 +3198,7 @@ void QGuiApplicationPrivate::processScreenLogicalDotsPerInchChange(QWindowSystem
     s->d_func()->logicalDpi = QDpi(e->dpiX, e->dpiY);
 
     emit s->logicalDotsPerInchChanged(s->logicalDotsPerInch());
+    s->d_func()->updateGeometriesWithSignals();
 
     resetCachedDevicePixelRatio();
 }

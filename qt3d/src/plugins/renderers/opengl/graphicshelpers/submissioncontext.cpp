@@ -356,6 +356,23 @@ void applyStateHelper<LineWidth>(const LineWidth *state, SubmissionContext *gc)
     gc->openGLContext()->functions()->glLineWidth(std::get<0>(values));
 }
 
+GLint glAttachmentPoint(const QRenderTargetOutput::AttachmentPoint &attachmentPoint)
+{
+    if (attachmentPoint <= QRenderTargetOutput::Color15)
+        return GL_COLOR_ATTACHMENT0 + attachmentPoint;
+
+    switch (attachmentPoint) {
+    case QRenderTargetOutput::Depth:
+    case QRenderTargetOutput::DepthStencil:
+        return GL_DEPTH_ATTACHMENT;
+    case QRenderTargetOutput::Stencil:
+        return GL_STENCIL_ATTACHMENT;
+    default:
+        Q_UNREACHABLE();
+        return GL_NONE;
+    }
+}
+
 } // anonymous
 
 
@@ -564,6 +581,13 @@ GLuint SubmissionContext::updateRenderTarget(Qt3DCore::QNodeId renderTargetNodeI
     return fboId;
 }
 
+void SubmissionContext::releaseRenderTargets()
+{
+    const auto keys = m_renderTargets.keys();
+    for (Qt3DCore::QNodeId renderTargetId : keys)
+        releaseRenderTarget(renderTargetId);
+}
+
 QSize SubmissionContext::renderTargetSize(const QSize &surfaceSize) const
 {
     QSize renderTargetSize;
@@ -597,7 +621,7 @@ QSize SubmissionContext::renderTargetSize(const QSize &surfaceSize) const
                 return renderTargetSize;
         }
     } else {
-        renderTargetSize = m_surface->size();
+        renderTargetSize = surfaceSize;
         if (m_surface->surfaceClass() == QSurface::Window) {
             const float dpr = static_cast<QWindow *>(m_surface)->devicePixelRatio();
             renderTargetSize *= dpr;
@@ -1231,7 +1255,7 @@ bool SubmissionContext::setParameters(ShaderParameterPack &parameterPack, GLShad
     // for SSBO and UBO
 
     // Bind Shader Storage block to SSBO and update SSBO
-    const QVector<BlockToSSBO> blockToSSBOs = parameterPack.shaderStorageBuffers();
+    const std::vector<BlockToSSBO> &blockToSSBOs = parameterPack.shaderStorageBuffers();
     for (const BlockToSSBO b : blockToSSBOs) {
         Buffer *cpuBuffer = m_renderer->nodeManagers()->bufferManager()->lookupResource(b.m_bufferID);
         GLBuffer *ssbo = glBufferForRenderBuffer(cpuBuffer);
@@ -1249,7 +1273,7 @@ bool SubmissionContext::setParameters(ShaderParameterPack &parameterPack, GLShad
 
     // Bind UniformBlocks to UBO and update UBO from Buffer
     // TO DO: Convert ShaderData to Buffer so that we can use that generic process
-    const QVector<BlockToUBO> blockToUBOs = parameterPack.uniformBuffers();
+    const std::vector<BlockToUBO> &blockToUBOs = parameterPack.uniformBuffers();
     int uboIndex = 0;
     for (const BlockToUBO &b : blockToUBOs) {
         Buffer *cpuBuffer = m_renderer->nodeManagers()->bufferManager()->lookupResource(b.m_bufferID);
@@ -1263,21 +1287,20 @@ bool SubmissionContext::setParameters(ShaderParameterPack &parameterPack, GLShad
     }
 
     // Update uniforms in the Default Uniform Block
-    const PackUniformHash values = parameterPack.uniforms();
-    const QVector<int> &activeUniformsIndices = parameterPack.submissionUniformIndices();
+    const PackUniformHash& values = parameterPack.uniforms();
+    const auto &activeUniformsIndices = parameterPack.submissionUniformIndices();
     const QVector<ShaderUniform> &shaderUniforms = shader->uniforms();
 
     for (const int shaderUniformIndex : activeUniformsIndices) {
         const ShaderUniform &uniform = shaderUniforms[shaderUniformIndex];
-        const UniformValue &v = values.value(uniform.m_nameId);
+        values.apply(uniform.m_nameId, [&] (const UniformValue& v) {
+            // skip invalid textures/images
+            if (!((v.valueType() == UniformValue::TextureValue ||
+                   v.valueType() == UniformValue::ShaderImageValue) &&
+                  *v.constData<int>() == -1))
+                applyUniform(uniform, v);
+        });
 
-        // skip invalid textures/images
-        if ((v.valueType() == UniformValue::TextureValue ||
-             v.valueType() == UniformValue::ShaderImageValue) &&
-            *v.constData<int>() == -1)
-            continue;
-
-        applyUniform(uniform, v);
     }
     // if not all data is valid, the next frame will be rendered immediately
     return true;
@@ -1566,12 +1589,12 @@ void SubmissionContext::blitFramebuffer(Qt3DCore::QNodeId inputRenderTargetId,
 
     //Bind texture
     if (!inputBufferIsDefault)
-        readBuffer(GL_COLOR_ATTACHMENT0 + inputAttachmentPoint);
+        readBuffer(glAttachmentPoint(inputAttachmentPoint));
 
     if (!outputBufferIsDefault) {
         // Note that we use glDrawBuffers, not glDrawBuffer. The
         // latter is not available with GLES.
-        const int buf = outputAttachmentPoint;
+        const int buf = glAttachmentPoint(outputAttachmentPoint);
         drawBuffers(1, &buf);
     }
 

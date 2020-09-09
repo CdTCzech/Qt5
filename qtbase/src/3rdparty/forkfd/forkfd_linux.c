@@ -82,7 +82,7 @@ static int sys_clone(unsigned long cloneflags, int *ptid)
     return syscall(__NR_clone, cloneflags, child_stack, stack_size, ptid, newtls, ctid);
 #elif defined(__arc__) || defined(__arm__) || defined(__aarch64__) || defined(__mips__) || \
     defined(__nds32__) || defined(__hppa__) || defined(__powerpc__) || defined(__i386__) || \
-    defined(__x86_64__) || defined(__xtensa__) || defined(__alpha__)
+    defined(__x86_64__) || defined(__xtensa__) || defined(__alpha__) || defined(__riscv)
     /* ctid and newtls are inverted on CONFIG_CLONE_BACKWARDS architectures,
      * but since both values are 0, there's no harm. */
     return syscall(__NR_clone, cloneflags, child_stack, ptid, ctid, newtls);
@@ -148,8 +148,6 @@ int system_forkfd(int flags, pid_t *ppid, int *system)
 
     *system = 1;
     unsigned long cloneflags = CLONE_PIDFD;
-    if (flags & FFD_VFORK_SEMANTICS)
-        cloneflags |= CLONE_VFORK;
     pid = sys_clone(cloneflags, &pidfd);
     if (ppid)
         *ppid = pid;

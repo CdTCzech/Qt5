@@ -263,12 +263,10 @@ QXmlStreamEntityResolver *QXmlStreamReader::entityResolver() const
 
   \ingroup xml-tools
 
-  QXmlStreamReader is a faster and more convenient replacement for
-  Qt's own SAX parser (see QXmlSimpleReader). In some cases it might
-  also be a faster and more convenient alternative for use in
-  applications that would otherwise use a DOM tree (see QDomDocument).
-  QXmlStreamReader reads data either from a QIODevice (see
-  setDevice()), or from a raw QByteArray (see addData()).
+  QXmlStreamReader provides a simple streaming API to parse well-formed
+  XML. It is an alternative to first loading the complete XML into a
+  DOM tree (see \l QDomDocument). QXmlStreamReader reads data either
+  from a QIODevice (see setDevice()), or from a raw QByteArray (see addData()).
 
   Qt provides QXmlStreamWriter for writing XML.
 
@@ -1485,15 +1483,16 @@ uint QXmlStreamReaderPrivate::getChar_helper()
     const int BUFFER_SIZE = 8192;
     characterOffset += readBufferPos;
     readBufferPos = 0;
-    readBuffer.resize(0);
+    if (readBuffer.size())
+        readBuffer.resize(0);
 #if QT_CONFIG(textcodec)
     if (decoder)
 #endif
         nbytesread = 0;
     if (device) {
         rawReadBuffer.resize(BUFFER_SIZE);
-        int nbytesreadOrMinus1 = device->read(rawReadBuffer.data() + nbytesread, BUFFER_SIZE - nbytesread);
-        nbytesread += qMax(nbytesreadOrMinus1, 0);
+        qint64 nbytesreadOrMinus1 = device->read(rawReadBuffer.data() + nbytesread, BUFFER_SIZE - nbytesread);
+        nbytesread += qMax(nbytesreadOrMinus1, qint64{0});
     } else {
         if (nbytesread)
             rawReadBuffer += dataBuffer;

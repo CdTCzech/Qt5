@@ -102,6 +102,18 @@ static bool canRequestPermissionFor(ProfileAdapter::PermissionType type)
     return false;
 }
 
+static blink::mojom::PermissionStatus toBlink(ProfileAdapter::PermissionState reply)
+{
+    switch (reply) {
+    case ProfileAdapter::AskPermission:
+        return blink::mojom::PermissionStatus::ASK;
+    case ProfileAdapter::AllowedPermission:
+        return blink::mojom::PermissionStatus::GRANTED;
+    case ProfileAdapter::DeniedPermission:
+        return blink::mojom::PermissionStatus::DENIED;
+    }
+}
+
 PermissionManagerQt::PermissionManagerQt()
     : m_requestIdCount(0)
     , m_subscriberIdCount(0)
@@ -112,12 +124,20 @@ PermissionManagerQt::~PermissionManagerQt()
 {
 }
 
-void PermissionManagerQt::permissionRequestReply(const QUrl &origin, ProfileAdapter::PermissionType type, bool reply)
+void PermissionManagerQt::permissionRequestReply(const QUrl &url, ProfileAdapter::PermissionType type, ProfileAdapter::PermissionState reply)
 {
+    // Normalize the QUrl to GURL origin form.
+    const GURL gorigin = toGurl(url).GetOrigin();
+    const QUrl origin = gorigin.is_empty() ? url : toQt(gorigin);
+    if (origin.isEmpty())
+        return;
     QPair<QUrl, ProfileAdapter::PermissionType> key(origin, type);
-    m_permissions[key] = reply;
-    blink::mojom::PermissionStatus status = reply ? blink::mojom::PermissionStatus::GRANTED : blink::mojom::PermissionStatus::DENIED;
-    {
+    if (reply == ProfileAdapter::AskPermission)
+        m_permissions.remove(key);
+    else
+        m_permissions[key] = (reply == ProfileAdapter::AllowedPermission);
+    blink::mojom::PermissionStatus status = toBlink(reply);
+    if (reply != ProfileAdapter::AskPermission) {
         auto it = m_requests.begin();
         while (it != m_requests.end()) {
             if (it->origin == origin && it->type == type) {
@@ -131,6 +151,9 @@ void PermissionManagerQt::permissionRequestReply(const QUrl &origin, ProfileAdap
         if (it.second.origin == origin && it.second.type == type)
             it.second.callback.Run(status);
     }
+
+    if (reply == ProfileAdapter::AskPermission)
+        return;
 
     auto it = m_multiRequests.begin();
     while (it != m_multiRequests.end()) {
@@ -177,6 +200,11 @@ int PermissionManagerQt::RequestPermission(content::PermissionType permission,
                                             bool /*user_gesture*/,
                                             base::OnceCallback<void(blink::mojom::PermissionStatus)> callback)
 {
+    if (requesting_origin.is_empty()) {
+        std::move(callback).Run(blink::mojom::PermissionStatus::DENIED);
+        return content::PermissionController::kNoPendingOperation;
+    }
+
     WebContentsDelegateQt *contentsDelegate = static_cast<WebContentsDelegateQt *>(
         content::WebContents::FromRenderFrameHost(frameHost)->GetDelegate());
     Q_ASSERT(contentsDelegate);
@@ -208,6 +236,11 @@ int PermissionManagerQt::RequestPermissions(const std::vector<content::Permissio
                                             bool /*user_gesture*/,
                                             base::OnceCallback<void(const std::vector<blink::mojom::PermissionStatus>&)> callback)
 {
+    if (requesting_origin.is_empty()) {
+        std::move(callback).Run(std::vector<blink::mojom::PermissionStatus>(permissions.size(), blink::mojom::PermissionStatus::DENIED));
+        return content::PermissionController::kNoPendingOperation;
+    }
+
     WebContentsDelegateQt *contentsDelegate = static_cast<WebContentsDelegateQt *>(
         content::WebContents::FromRenderFrameHost(frameHost)->GetDelegate());
     Q_ASSERT(contentsDelegate);

@@ -80,12 +80,12 @@ public:
     inline void setManager(EntityManager *manager) Q_DECL_NOTHROW { m_manager = manager; }
     inline QVector<Entity *> &filteredEntities() Q_DECL_NOTHROW { return m_filteredEntities; }
 
-    void run()
+    void run() override
     {
         m_filteredEntities.clear();
-        const QVector<HEntity> handles = m_manager->activeHandles();
+        const std::vector<HEntity> &handles = m_manager->activeHandles();
         m_filteredEntities.reserve(handles.size());
-        for (const HEntity handle : handles) {
+        for (const HEntity &handle : handles) {
             Entity *e = m_manager->data(handle);
             if (e->containsComponentsOfType<T, Ts...>())
                 m_filteredEntities.push_back(e);

@@ -127,27 +127,6 @@ static QWebEnginePage::WebWindowType toWindowType(WebContentsAdapterClient::Wind
     }
 }
 
-QWebEnginePage::WebAction editorActionForKeyEvent(QKeyEvent* event)
-{
-    static struct {
-        QKeySequence::StandardKey standardKey;
-        QWebEnginePage::WebAction action;
-    } editorActions[] = {
-        { QKeySequence::Cut, QWebEnginePage::Cut },
-        { QKeySequence::Copy, QWebEnginePage::Copy },
-        { QKeySequence::Paste, QWebEnginePage::Paste },
-        { QKeySequence::Undo, QWebEnginePage::Undo },
-        { QKeySequence::Redo, QWebEnginePage::Redo },
-        { QKeySequence::SelectAll, QWebEnginePage::SelectAll },
-        { QKeySequence::UnknownKey, QWebEnginePage::NoWebAction }
-    };
-    for (int i = 0; editorActions[i].standardKey != QKeySequence::UnknownKey; ++i)
-        if (event == editorActions[i].standardKey)
-            return editorActions[i].action;
-
-    return QWebEnginePage::NoWebAction;
-}
-
 QWebEnginePagePrivate::QWebEnginePagePrivate(QWebEngineProfile *_profile)
     : adapter(QSharedPointer<WebContentsAdapter>::create())
     , history(new QWebEngineHistory(new QWebEngineHistoryPrivate(this)))
@@ -1136,9 +1115,11 @@ bool QWebEnginePage::isAudioMuted() const {
 
 void QWebEnginePage::setAudioMuted(bool muted) {
     Q_D(QWebEnginePage);
+    bool wasAudioMuted = isAudioMuted();
     d->defaultAudioMuted = muted;
-    if (d->adapter->isInitialized())
-        d->adapter->setAudioMuted(muted);
+    d->adapter->setAudioMuted(muted);
+    if (wasAudioMuted != isAudioMuted())
+        Q_EMIT audioMutedChanged(muted);
 }
 
 /*!
@@ -1929,8 +1910,24 @@ QMenu *QWebEnginePage::createStandardContextMenu()
 void QWebEnginePage::setFeaturePermission(const QUrl &securityOrigin, QWebEnginePage::Feature feature, QWebEnginePage::PermissionPolicy policy)
 {
     Q_D(QWebEnginePage);
-    if (policy == PermissionUnknown)
+    if (policy == PermissionUnknown) {
+        switch (feature) {
+        case MediaAudioVideoCapture:
+        case MediaAudioCapture:
+        case MediaVideoCapture:
+        case DesktopAudioVideoCapture:
+        case DesktopVideoCapture:
+        case MouseLock:
+            break;
+        case Geolocation:
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::GeolocationPermission, ProfileAdapter::AskPermission);
+            break;
+        case Notifications:
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::NotificationPermission, ProfileAdapter::AskPermission);
+            break;
+        }
         return;
+    }
 
     const WebContentsAdapterClient::MediaRequestFlags audioVideoCaptureFlags(
         WebContentsAdapterClient::MediaVideoCapture |
@@ -1956,14 +1953,14 @@ void QWebEnginePage::setFeaturePermission(const QUrl &securityOrigin, QWebEngine
         case DesktopVideoCapture:
             d->adapter->grantMediaAccessPermission(securityOrigin, WebContentsAdapterClient::MediaDesktopVideoCapture);
             break;
-        case Geolocation:
-            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::GeolocationPermission, true);
-            break;
         case MouseLock:
-            d->adapter->grantMouseLockPermission(true);
+            d->adapter->grantMouseLockPermission(securityOrigin, true);
+            break;
+        case Geolocation:
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::GeolocationPermission, ProfileAdapter::AllowedPermission);
             break;
         case Notifications:
-            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::NotificationPermission, true);
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::NotificationPermission, ProfileAdapter::AllowedPermission);
             break;
         }
     } else { // if (policy == PermissionDeniedByUser)
@@ -1976,13 +1973,13 @@ void QWebEnginePage::setFeaturePermission(const QUrl &securityOrigin, QWebEngine
             d->adapter->grantMediaAccessPermission(securityOrigin, WebContentsAdapterClient::MediaNone);
             break;
         case Geolocation:
-            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::GeolocationPermission, false);
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::GeolocationPermission, ProfileAdapter::DeniedPermission);
             break;
         case MouseLock:
-            d->adapter->grantMouseLockPermission(false);
+            d->adapter->grantMouseLockPermission(securityOrigin, false);
             break;
         case Notifications:
-            d->adapter->runFeatureRequestCallback(securityOrigin, ProfileAdapter::NotificationPermission, false);
+            d->adapter->grantFeaturePermission(securityOrigin, ProfileAdapter::NotificationPermission, ProfileAdapter::DeniedPermission);
             break;
         }
     }

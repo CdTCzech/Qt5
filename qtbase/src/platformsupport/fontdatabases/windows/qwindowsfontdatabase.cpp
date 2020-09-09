@@ -1974,6 +1974,8 @@ QFontEngine *QWindowsFontDatabase::createEngine(const QFontDef &request, const Q
                                                                   reinterpret_cast<void **>(&directWriteFontFace2)))) {
                     if (directWriteFontFace2->IsColorFont())
                         isColorFont = directWriteFontFace2->GetPaletteEntryCount() > 0;
+
+                    directWriteFontFace2->Release();
                 }
 #endif
                 useDw = useDw || useDirectWrite(hintingPreference, fam, isColorFont);
@@ -1995,9 +1997,8 @@ QFontEngine *QWindowsFontDatabase::createEngine(const QFontDef &request, const Q
                         fedw->glyphFormat = QFontEngine::Format_ARGB;
                     fedw->initFontInfo(fontDef, dpi);
                     fe = fedw;
-                } else {
-                    directWriteFontFace->Release();
                 }
+                directWriteFontFace->Release();
             } else if (useDw) {
                 const QString errorString = qt_error_string(int(hr));
                 qWarning().noquote().nospace() << "DirectWrite: CreateFontFaceFromHDC() failed ("
@@ -2062,19 +2063,16 @@ QFont QWindowsFontDatabase::LOGFONT_to_QFont(const LOGFONT& logFont, int vertica
     return qFont;
 }
 
+static int s_defaultVerticalDPI = 96; // Native Pixels
+
 int QWindowsFontDatabase::defaultVerticalDPI()
 {
-    static int vDPI = -1;
-    if (vDPI == -1) {
-        if (HDC defaultDC = GetDC(0)) {
-            vDPI = GetDeviceCaps(defaultDC, LOGPIXELSY);
-            ReleaseDC(0, defaultDC);
-        } else {
-            // FIXME: Resolve now or return 96 and keep unresolved?
-            vDPI = 96;
-        }
-    }
-    return vDPI;
+    return s_defaultVerticalDPI;
+}
+
+void QWindowsFontDatabase::setDefaultVerticalDPI(int d)
+{
+    s_defaultVerticalDPI = d;
 }
 
 bool QWindowsFontDatabase::isPrivateFontFamily(const QString &family) const

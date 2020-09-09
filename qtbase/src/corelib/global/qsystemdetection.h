@@ -72,6 +72,7 @@
      UNIX     - Any UNIX BSD/SYSV system
      ANDROID  - Android platform
      HAIKU    - Haiku
+     WEBOS    - LG WebOS
 
    The following operating systems have variants:
      LINUX    - both Q_OS_LINUX and Q_OS_ANDROID are defined when building for Android
@@ -111,6 +112,9 @@
 #  else
 #    error "Qt has not been ported to this Apple platform - see http://www.qt.io/developers"
 #  endif
+#elif defined(__WEBOS__)
+#  define Q_OS_WEBOS
+#  define Q_OS_LINUX
 #elif defined(__ANDROID__) || defined(ANDROID)
 #  define Q_OS_ANDROID
 #  define Q_OS_LINUX
@@ -245,6 +249,9 @@
 #  if !defined(__MAC_10_15)
 #       define __MAC_10_15 101500
 #  endif
+#  if !defined(__MAC_10_16)
+#       define __MAC_10_16 101600
+#  endif
 #  if !defined(MAC_OS_X_VERSION_10_11)
 #       define MAC_OS_X_VERSION_10_11 __MAC_10_11
 #  endif
@@ -259,6 +266,9 @@
 #  endif
 #  if !defined(MAC_OS_X_VERSION_10_15)
 #       define MAC_OS_X_VERSION_10_15 __MAC_10_15
+#  endif
+#  if !defined(MAC_OS_X_VERSION_10_16)
+#       define MAC_OS_X_VERSION_10_16 __MAC_10_16
 #  endif
 #
 #  if !defined(__IPHONE_10_0)

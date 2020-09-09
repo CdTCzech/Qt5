@@ -54,4 +54,3 @@ fi
 # Set env variables
 echo "export QNX_700=$targetFolder/$folderName" >> ~/.bashrc
 echo "QNX SDP = 7.0.0" >> ~/versions.txt
-

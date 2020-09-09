@@ -976,7 +976,7 @@ bool QWindowsXPStylePrivate::drawBackgroundThruNativeBuffer(XPThemeData &themeDa
 
         // Fix alpha values, if needed
         if (potentialInvalidAlpha)
-            wasAlphaFixed = fixAlphaChannel(rect);
+            wasAlphaFixed = fixAlphaChannel(drawRect);
 
         QImage::Format format;
         if ((partIsTransparent && !wasAlphaSwapped) || (!partIsTransparent && hasAlpha)) {
@@ -1165,9 +1165,6 @@ void QWindowsXPStyle::polish(QWidget *widget)
         widget->setWindowOpacity(0.6);
     }
 #endif
-    if (qobject_cast<QStackedWidget*>(widget) &&
-               qobject_cast<QTabWidget*>(widget->parent()))
-        widget->parentWidget()->setAttribute(Qt::WA_ContentsPropagated);
 
     Q_D(QWindowsXPStyle);
     if (!d->hasInitColors) {

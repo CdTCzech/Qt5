@@ -13,6 +13,7 @@
 #include "base/memory/singleton.h"
 #include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/branding_buildflags.h"
 #include "components/dbus/properties/dbus_properties.h"
@@ -24,6 +25,8 @@
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
+#include "dbus/string_util.h"
+#include "media/audio/audio_manager.h"
 
 namespace system_media_controls {
 
@@ -41,15 +44,19 @@ namespace {
 
 constexpr int kNumMethodsToExport = 11;
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+const char kMprisAPIServiceNameFallback[] =
+    "chrome";
+#else
+const char kMprisAPIServiceNameFallback[] =
+    "chromium";
+#endif
+
 }  // namespace
 
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 const char kMprisAPIServiceNamePrefix[] =
-    "org.mpris.MediaPlayer2.chrome.instance";
-#else
-const char kMprisAPIServiceNamePrefix[] =
-    "org.mpris.MediaPlayer2.chromium.instance";
-#endif
+    "org.mpris.MediaPlayer2.";
+
 const char kMprisAPIObjectPath[] = "/org/mpris/MediaPlayer2";
 const char kMprisAPIInterfaceName[] = "org.mpris.MediaPlayer2";
 const char kMprisAPIPlayerInterfaceName[] = "org.mpris.MediaPlayer2.Player";
@@ -59,9 +66,19 @@ SystemMediaControlsLinux* SystemMediaControlsLinux::GetInstance() {
   return base::Singleton<SystemMediaControlsLinux>::get();
 }
 
+static std::string MakeServiceName() {
+  std::string baseName = media::AudioManager::GetGlobalAppName();
+  if (baseName.size() > 100 || !dbus::IsValidServiceNameElement(baseName))
+    baseName = kMprisAPIServiceNameFallback;
+  return std::string(kMprisAPIServiceNamePrefix) + baseName +
+      std::string(".instance") +
+      base::NumberToString(base::Process::Current().Pid());
+}
+
 SystemMediaControlsLinux::SystemMediaControlsLinux()
-    : service_name_(std::string(kMprisAPIServiceNamePrefix) +
-                    base::NumberToString(base::Process::Current().Pid())) {}
+    : service_name_(MakeServiceName())
+{
+}
 
 SystemMediaControlsLinux::~SystemMediaControlsLinux() {
   if (bus_) {
@@ -159,11 +176,7 @@ void SystemMediaControlsLinux::InitializeProperties() {
   set_property("CanRaise", DbusBoolean(false));
   set_property("HasTrackList", DbusBoolean(false));
 
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  set_property("Identity", DbusString("Chrome"));
-#else
-  set_property("Identity", DbusString("Chromium"));
-#endif
+  set_property("Identity", DbusString(media::AudioManager::GetGlobalAppName()));
   set_property("SupportedUriSchemes", DbusArray<DbusString>());
   set_property("SupportedMimeTypes", DbusArray<DbusString>());
 

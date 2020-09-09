@@ -130,7 +130,7 @@ QT_BEGIN_NAMESPACE
     \fn QRegion::QRegion(const QRect &r, RegionType t)
     \overload
 
-    Create a region based on the rectange \a r with region type \a t.
+    Create a region based on the rectangle \a r with region type \a t.
 
     If the rectangle is invalid a null region will be created.
 
@@ -2845,7 +2845,7 @@ static bool RectInRegion(QRegionPrivate *region, int rx, int ry, uint rwidth, ui
             break;
         }
     }
-    return partIn ? ((ry <= prect->bottom()) ? RectanglePart : RectangleIn) : RectangleOut;
+    return partIn;
 }
 // END OF Region.c extract
 // START OF poly.h extract

@@ -57,7 +57,7 @@ class QQuick3DShaderUtilsShader;
 namespace QSSGShaderUtils
 {
 void addSnapperSampler(const QByteArray &texName, QByteArray &shaderPrefix);
-QByteArray resolveShader(const QByteArray &shader, QByteArray &shaderPath);
+QByteArray resolveShader(const QByteArray &shader, QByteArray &shaderPath, const QObject *qmlObj);
 QByteArray mergeShaderCode(const QByteArray &shared,
                            const QByteArray &uniforms,
                            const QByteArray &textures,
@@ -459,6 +459,7 @@ public:
     static void qmlAppendCommand(QQmlListProperty<QQuick3DShaderUtilsRenderCommand> *list, QQuick3DShaderUtilsRenderCommand *command);
     static QQuick3DShaderUtilsRenderCommand *qmlCommandAt(QQmlListProperty<QQuick3DShaderUtilsRenderCommand> *list, int index);
     static int qmlCommandCount(QQmlListProperty<QQuick3DShaderUtilsRenderCommand> *list);
+    static void qmlCommandClear(QQmlListProperty<QQuick3DShaderUtilsRenderCommand> *list);
 
     static void qmlAppendShader(QQmlListProperty<QQuick3DShaderUtilsShader> *list, QQuick3DShaderUtilsShader *shader);
     static QQuick3DShaderUtilsShader *qmlShaderAt(QQmlListProperty<QQuick3DShaderUtilsShader> *list, int index);

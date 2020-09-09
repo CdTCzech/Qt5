@@ -173,6 +173,10 @@ private slots:
     void devicePixelRatio_data();
     void devicePixelRatio();
 
+    void xpmBufferOverflow();
+
+    void xbmBufferHandling();
+
 private:
     QString prefix;
     QTemporaryDir m_temporaryDir;
@@ -1803,7 +1807,7 @@ static QByteArray msgIgnoreFormatAndExtensionFail(const QString &sourceFileName,
     QByteArray result = "Failure for '";
     result += sourceFileName.toLocal8Bit();
     result += "' as '";
-    result += targetFileName;
+    result += targetFileName.toLocal8Bit();
     result += "', detected as: '";
     result += detectedFormat.toLocal8Bit();
     result += '\'';
@@ -1825,7 +1829,7 @@ void tst_QImageReader::testIgnoresFormatAndExtension()
         tempPath += QLatin1Char('/');
 
     foreach (const QByteArray &f, formats) {
-        if (f == extension)
+        if (f == extension.toLocal8Bit())
             continue;
 
         QFile tmp(tempPath + name + QLatin1Char('_') + expected + QLatin1Char('.') + f);
@@ -2045,6 +2049,48 @@ void tst_QImageReader::devicePixelRatio()
     QImage img = r.read();
     QCOMPARE(img.size(), size);
     QCOMPARE(img.devicePixelRatio(), dpr);
+}
+
+void tst_QImageReader::xpmBufferOverflow()
+{
+    // Please note that the overflow only showed when Qt was configured with "-sanitize address".
+    QImageReader(":/images/oss-fuzz-23988.xpm").read();
+}
+
+void tst_QImageReader::xbmBufferHandling()
+{
+    uint8_t original_buffer[256];
+    for (int i = 0; i < 256; ++i)
+        original_buffer[i] = i;
+
+    QImage image(original_buffer, 256, 8, QImage::Format_MonoLSB);
+    image.setColorTable({0xff000000, 0xffffffff});
+
+    QByteArray buffer;
+    {
+        QBuffer buf(&buffer);
+        QImageWriter writer(&buf, "xbm");
+        writer.write(image);
+    }
+
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+
+    auto i = buffer.indexOf(',');
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                              ");
+#if 0   // Lines longer than 300 chars not supported currently
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+#endif
+
+    i = buffer.lastIndexOf("\n ");
+    buffer.truncate(i + 1);
+    buffer.append(QByteArray(297, ' '));
+    buffer.append("0x");
+    // Only check we get no buffer overflow
+    QImage::fromData(buffer, "xbm");
 }
 
 QTEST_MAIN(tst_QImageReader)

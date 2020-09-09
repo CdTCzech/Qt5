@@ -1288,7 +1288,9 @@ QUrl QQmlEngine::baseUrl() const
 {
     Q_D(const QQmlEngine);
     if (d->baseUrl.isEmpty()) {
-        return QUrl::fromLocalFile(QDir::currentPath() + QDir::separator());
+        const QString currentPath = QDir::currentPath();
+        const QString rootPath = QDir::rootPath();
+        return QUrl::fromLocalFile((currentPath == rootPath) ? rootPath : (currentPath + QDir::separator()));
     } else {
         return d->baseUrl;
     }
@@ -2016,9 +2018,7 @@ QQmlData *QQmlData::createQQmlData(QObjectPrivate *priv)
 QQmlPropertyCache *QQmlData::createPropertyCache(QJSEngine *engine, QObject *object)
 {
     QQmlData *ddata = QQmlData::get(object, /*create*/true);
-    ddata->propertyCache = QJSEnginePrivate::get(engine)->cache(object);
-    if (ddata->propertyCache)
-        ddata->propertyCache->addref();
+    ddata->propertyCache = QJSEnginePrivate::get(engine)->cache(object, -1, true);
     return ddata->propertyCache;
 }
 

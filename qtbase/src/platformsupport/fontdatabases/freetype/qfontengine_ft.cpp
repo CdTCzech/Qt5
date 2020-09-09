@@ -742,15 +742,15 @@ bool QFontEngineFT::init(FaceId faceId, bool antialias, GlyphFormat format,
     FT_Face face = lockFace();
 
     if (FT_IS_SCALABLE(face)) {
-        bool fake_oblique = (fontDef.style != QFont::StyleNormal) && !(face->style_flags & FT_STYLE_FLAG_ITALIC);
+        bool fake_oblique = (fontDef.style != QFont::StyleNormal) && !(face->style_flags & FT_STYLE_FLAG_ITALIC) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_ITALIC");
         if (fake_oblique)
             obliquen = true;
         FT_Set_Transform(face, &matrix, nullptr);
         freetype->matrix = matrix;
         // fake bold
-        if ((fontDef.weight >= QFont::Bold) && !(face->style_flags & FT_STYLE_FLAG_BOLD) && !FT_IS_FIXED_WIDTH(face)) {
+        if ((fontDef.weight >= QFont::Bold) && !(face->style_flags & FT_STYLE_FLAG_BOLD) && !FT_IS_FIXED_WIDTH(face) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_BOLD")) {
             if (const TT_OS2 *os2 = reinterpret_cast<const TT_OS2 *>(FT_Get_Sfnt_Table(face, ft_sfnt_os2))) {
-                if (os2->usWeightClass < 700)
+                if (os2->usWeightClass < 700 && fontDef.pixelSize < 64)
                     embolden = true;
             }
         }
@@ -1504,6 +1504,8 @@ glyph_t QFontEngineFT::glyphIndex(uint ucs4) const
                 FT_Set_Charmap(face, freetype->symbol_map);
                 glyph = FT_Get_Char_Index(face, ucs4);
                 FT_Set_Charmap(face, freetype->unicode_map);
+                if (!glyph && symbol && ucs4 < 0x100)
+                    glyph = FT_Get_Char_Index(face, ucs4 + 0xf000);
             }
         }
         if (ucs4 < QFreetypeFace::cmapCacheSize)
@@ -1547,6 +1549,8 @@ bool QFontEngineFT::stringToCMap(const QChar *str, int len, QGlyphLayout *glyphs
                     FT_Set_Charmap(face, freetype->symbol_map);
                     glyph = FT_Get_Char_Index(face, uc);
                     FT_Set_Charmap(face, freetype->unicode_map);
+                    if (!glyph && symbol && uc < 0x100)
+                        glyph = FT_Get_Char_Index(face, uc + 0xf000);
                 }
                 glyphs->glyphs[glyph_pos] = glyph;
                 if (uc < QFreetypeFace::cmapCacheSize)

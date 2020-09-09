@@ -84,6 +84,7 @@
 #include <QtCore/qurl.h>
 #include <QtCore/qvarlengtharray.h>
 #include <QtCore/qscopedvaluerollback.h>
+#include <QtCore/qscopeguard.h>
 #include <QtCore/qlibrary.h>
 #include <QtCore/qoperatingsystemversion.h>
 
@@ -97,6 +98,53 @@
 #include <string.h>
 
 QT_BEGIN_NAMESPACE
+
+#ifdef Q_OS_WIN
+
+namespace {
+
+QSslCertificate findCertificateToFetch(const QList<QSslError> &tlsErrors, bool checkAIA)
+{
+    QSslCertificate certToFetch;
+
+    for (const auto &tlsError : tlsErrors) {
+        switch (tlsError.error()) {
+        case QSslError::UnableToGetLocalIssuerCertificate: // site presented intermediate cert, but root is unknown
+        case QSslError::SelfSignedCertificateInChain: // site presented a complete chain, but root is unknown
+            certToFetch = tlsError.certificate();
+            break;
+        case QSslError::SelfSignedCertificate:
+        case QSslError::CertificateBlacklisted:
+            //With these errors, we know it will be untrusted so save time by not asking windows
+            return QSslCertificate{};
+        default:
+#ifdef QSSLSOCKET_DEBUG
+            qCDebug(lcSsl) << tlsError.errorString();
+#endif
+            //TODO - this part is strange.
+            break;
+        }
+    }
+
+    if (checkAIA) {
+        const auto extensions = certToFetch.extensions();
+        for (const auto &ext : extensions) {
+            if (ext.oid() == QStringLiteral("1.3.6.1.5.5.7.1.1")) // See RFC 4325
+                return certToFetch;
+        }
+        //The only reason we check this extensions is because an application set trusted
+        //CA certificates explicitly, thus technically disabling CA fetch. So, if it's
+        //the case and an intermediate certificate is missing, and no extensions is
+        //present on the leaf certificate - we fail the handshake immediately.
+        return QSslCertificate{};
+    }
+
+    return certToFetch;
+}
+
+} // Unnamed namespace
+
+#endif // Q_OS_WIN
 
 Q_GLOBAL_STATIC(QRecursiveMutex, qt_opensslInitMutex)
 
@@ -117,6 +165,13 @@ QString QSslSocketBackendPrivate::getErrorsFromOpenSsl()
         errorString.append(QString::fromLatin1(buf)); // error is ascii according to man ERR_error_string
     }
     return errorString;
+}
+
+void QSslSocketBackendPrivate::logAndClearErrorQueue()
+{
+    const auto errors = getErrorsFromOpenSsl();
+    if (errors.size())
+        qCWarning(lcSsl) << "Discarding errors:" << errors;
 }
 
 extern "C" {
@@ -1348,40 +1403,27 @@ bool QSslSocketBackendPrivate::startHandshake()
         sslErrors = errors;
 
 #ifdef Q_OS_WIN
+        const bool fetchEnabled = s_loadRootCertsOnDemand
+                                  && allowRootCertOnDemandLoading;
+        // !fetchEnabled is a special case scenario, when we potentially have a missing
+        // intermediate certificate and a recoverable chain, but on demand cert loading
+        // was disabled by setCaCertificates call. For this scenario we check if "Authority
+        // Information Access" is present - wincrypt can deal with such certificates.
+        QSslCertificate certToFetch;
+        if (doVerifyPeer && !verifyErrorsHaveBeenIgnored())
+            certToFetch = findCertificateToFetch(sslErrors, !fetchEnabled);
+
         //Skip this if not using system CAs, or if the SSL errors are configured in advance to be ignorable
-        if (doVerifyPeer
-            && s_loadRootCertsOnDemand
-            && allowRootCertOnDemandLoading
-            && !verifyErrorsHaveBeenIgnored()) {
-            //Windows desktop versions starting from vista ship with minimal set of roots
-            //and download on demand from the windows update server CA roots that are
-            //trusted by MS.
+        if (!certToFetch.isNull()) {
+            fetchAuthorityInformation = !fetchEnabled;
+            //Windows desktop versions starting from vista ship with minimal set of roots and download on demand
+            //from the windows update server CA roots that are trusted by MS. It also can fetch a missing intermediate
+            //in case "Authority Information Access" extension is present.
+            //
             //However, this is only transparent if using WinINET - we have to trigger it
             //ourselves.
-            QSslCertificate certToFetch;
-            bool fetchCertificate = true;
-            for (int i=0; i< sslErrors.count(); i++) {
-                switch (sslErrors.at(i).error()) {
-                case QSslError::UnableToGetLocalIssuerCertificate: // site presented intermediate cert, but root is unknown
-                case QSslError::SelfSignedCertificateInChain: // site presented a complete chain, but root is unknown
-                    certToFetch = sslErrors.at(i).certificate();
-                    break;
-                case QSslError::SelfSignedCertificate:
-                case QSslError::CertificateBlacklisted:
-                    //With these errors, we know it will be untrusted so save time by not asking windows
-                    fetchCertificate = false;
-                    break;
-                default:
-#ifdef QSSLSOCKET_DEBUG
-                    qCDebug(lcSsl) << sslErrors.at(i).errorString();
-#endif
-                    break;
-                }
-            }
-            if (fetchCertificate && !certToFetch.isNull()) {
-                fetchCaRootForCert(certToFetch);
-                return false;
-            }
+            fetchCaRootForCert(certToFetch);
+            return false;
         }
 #endif
         if (!checkSslErrors())
@@ -1558,7 +1600,11 @@ void QSslSocketBackendPrivate::fetchCaRootForCert(const QSslCertificate &cert)
     Q_Q(QSslSocket);
     //The root certificate is downloaded from windows update, which blocks for 15 seconds in the worst case
     //so the request is done in a worker thread.
-    QWindowsCaRootFetcher *fetcher = new QWindowsCaRootFetcher(cert, mode);
+    QList<QSslCertificate> customRoots;
+    if (fetchAuthorityInformation)
+        customRoots = configuration.caCertificates;
+
+    QWindowsCaRootFetcher *fetcher = new QWindowsCaRootFetcher(cert, mode, customRoots, q->peerVerifyName());
     QObject::connect(fetcher, SIGNAL(finished(QSslCertificate,QSslCertificate)), q, SLOT(_q_caRootLoaded(QSslCertificate,QSslCertificate)), Qt::QueuedConnection);
     QMetaObject::invokeMethod(fetcher, "start", Qt::QueuedConnection);
     pauseSocketNotifiers(q);
@@ -1568,14 +1614,20 @@ void QSslSocketBackendPrivate::fetchCaRootForCert(const QSslCertificate &cert)
 //This is the callback from QWindowsCaRootFetcher, trustedRoot will be invalid (default constructed) if it failed.
 void QSslSocketBackendPrivate::_q_caRootLoaded(QSslCertificate cert, QSslCertificate trustedRoot)
 {
-    Q_Q(QSslSocket);
+    if (fetchAuthorityInformation) {
+        if (!configuration.caCertificates.contains(trustedRoot))
+            trustedRoot = QSslCertificate{};
+        fetchAuthorityInformation = false;
+    }
+
     if (!trustedRoot.isNull() && !trustedRoot.isBlacklisted()) {
         if (s_loadRootCertsOnDemand) {
             //Add the new root cert to default cert list for use by future sockets
             QSslSocket::addDefaultCaCertificate(trustedRoot);
         }
         //Add the new root cert to this socket for future connections
-        q->addCaCertificate(trustedRoot);
+        if (!configuration.caCertificates.contains(trustedRoot))
+            configuration.caCertificates += trustedRoot;
         //Remove the broken chain ssl errors (as chain is verified by windows)
         for (int i=sslErrors.count() - 1; i >= 0; --i) {
             if (sslErrors.at(i).certificate() == cert) {
@@ -1594,6 +1646,7 @@ void QSslSocketBackendPrivate::_q_caRootLoaded(QSslCertificate cert, QSslCertifi
             }
         }
     }
+
     // Continue with remaining errors
     if (plainSocket)
         plainSocket->resume();
@@ -1615,6 +1668,10 @@ bool QSslSocketBackendPrivate::checkOcspStatus()
     Q_ASSERT(ssl);
     Q_ASSERT(mode == QSslSocket::SslClientMode); // See initSslContext() for SslServerMode
     Q_ASSERT(configuration.peerVerifyMode != QSslSocket::VerifyNone);
+
+    const auto clearErrorQueue = qScopeGuard([] {
+        logAndClearErrorQueue();
+    });
 
     ocspResponses.clear();
     ocspErrorDescription.clear();
@@ -2030,14 +2087,23 @@ QList<QSslCertificate> QSslSocketBackendPrivate::STACKOFX509_to_QSslCertificates
     return certificates;
 }
 
-QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &certificateChain, const QString &hostName)
+QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &certificateChain,
+                                                  const QString &hostName)
 {
-    QList<QSslError> errors;
-    if (certificateChain.count() <= 0) {
-        errors << QSslError(QSslError::UnspecifiedError);
-        return errors;
-    }
+    if (s_loadRootCertsOnDemand)
+        setDefaultCaCertificates(defaultCaCertificates() + systemCaCertificates());
 
+    return verify(QSslConfiguration::defaultConfiguration().caCertificates(), certificateChain, hostName);
+}
+
+QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &caCertificates,
+                                                  const QList<QSslCertificate> &certificateChain,
+                                                  const QString &hostName)
+{
+    if (certificateChain.count() <= 0)
+        return {QSslError(QSslError::UnspecifiedError)};
+
+    QList<QSslError> errors;
     // Setup the store with the default CA certificates
     X509_STORE *certStore = q_X509_STORE_new();
     if (!certStore) {
@@ -2047,12 +2113,7 @@ QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &
     }
     const std::unique_ptr<X509_STORE, decltype(&q_X509_STORE_free)> storeGuard(certStore, q_X509_STORE_free);
 
-    if (s_loadRootCertsOnDemand) {
-        setDefaultCaCertificates(defaultCaCertificates() + systemCaCertificates());
-    }
-
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    const auto caCertificates = QSslConfiguration::defaultConfiguration().caCertificates();
     for (const QSslCertificate &caCertificate : caCertificates) {
         // From https://www.openssl.org/docs/ssl/SSL_CTX_load_verify_locations.html:
         //

@@ -1809,7 +1809,7 @@ void QQuickFlickable::geometryChanged(const QRectF &newGeometry,
     if (newGeometry.width() != oldGeometry.width()) {
         changed = true; // we must update visualArea.widthRatio
         if (d->hData.viewSize < 0)
-            d->contentItem->setWidth(width());
+            d->contentItem->setWidth(width() - d->hData.startMargin - d->hData.endMargin);
         // Make sure that we're entirely in view.
         if (!d->pressed && !d->hData.moving && !d->vData.moving) {
             d->fixupMode = QQuickFlickablePrivate::Immediate;
@@ -1819,7 +1819,7 @@ void QQuickFlickable::geometryChanged(const QRectF &newGeometry,
     if (newGeometry.height() != oldGeometry.height()) {
         changed = true; // we must update visualArea.heightRatio
         if (d->vData.viewSize < 0)
-            d->contentItem->setHeight(height());
+            d->contentItem->setHeight(height() - d->vData.startMargin - d->vData.endMargin);
         // Make sure that we're entirely in view.
         if (!d->pressed && !d->hData.moving && !d->vData.moving) {
             d->fixupMode = QQuickFlickablePrivate::Immediate;
@@ -2080,7 +2080,7 @@ void QQuickFlickable::setContentWidth(qreal w)
         return;
     d->hData.viewSize = w;
     if (w < 0)
-        d->contentItem->setWidth(width());
+        d->contentItem->setWidth(width() - d->hData.startMargin - d->hData.endMargin);
     else
         d->contentItem->setWidth(w);
     d->hData.markExtentsDirty();
@@ -2109,7 +2109,7 @@ void QQuickFlickable::setContentHeight(qreal h)
         return;
     d->vData.viewSize = h;
     if (h < 0)
-        d->contentItem->setHeight(height());
+        d->contentItem->setHeight(height() - d->vData.startMargin - d->vData.endMargin);
     else
         d->contentItem->setHeight(h);
     d->vData.markExtentsDirty();
@@ -2321,20 +2321,22 @@ qreal QQuickFlickable::vHeight() const
 bool QQuickFlickable::xflick() const
 {
     Q_D(const QQuickFlickable);
-    if ((d->flickableDirection & QQuickFlickable::AutoFlickIfNeeded) && (vWidth() > width()))
+    const int contentWidthWithMargins = d->contentItem->width() + d->hData.startMargin + d->hData.endMargin;
+    if ((d->flickableDirection & QQuickFlickable::AutoFlickIfNeeded) && (contentWidthWithMargins > width()))
         return true;
     if (d->flickableDirection == QQuickFlickable::AutoFlickDirection)
-        return std::floor(qAbs(vWidth() - width()));
+        return std::floor(qAbs(contentWidthWithMargins - width()));
     return d->flickableDirection & QQuickFlickable::HorizontalFlick;
 }
 
 bool QQuickFlickable::yflick() const
 {
     Q_D(const QQuickFlickable);
-    if ((d->flickableDirection & QQuickFlickable::AutoFlickIfNeeded) && (vHeight() > height()))
+    const int contentHeightWithMargins = d->contentItem->height() + d->vData.startMargin + d->vData.endMargin;
+    if ((d->flickableDirection & QQuickFlickable::AutoFlickIfNeeded) && (contentHeightWithMargins > height()))
         return true;
     if (d->flickableDirection == QQuickFlickable::AutoFlickDirection)
-        return std::floor(qAbs(vHeight() - height()));
+        return std::floor(qAbs(contentHeightWithMargins - height()));
     return d->flickableDirection & QQuickFlickable::VerticalFlick;
 }
 

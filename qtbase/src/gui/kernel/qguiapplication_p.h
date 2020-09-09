@@ -100,6 +100,7 @@ public:
     bool shouldQuitInternal(const QWindowList &processedWindows);
     virtual bool tryCloseAllWindows();
 
+    static void captureGlobalModifierState(QEvent *e);
     static Qt::KeyboardModifiers modifier_buttons;
     static Qt::MouseButtons mouse_buttons;
 
@@ -323,6 +324,8 @@ public:
 
     static void resetCachedDevicePixelRatio();
 
+    static void updatePalette();
+
 protected:
     virtual void notifyThemeChanged();
 
@@ -337,7 +340,6 @@ protected:
 
 private:
     static void clearPalette();
-    static void updatePalette();
 
     friend class QDragManager;
 

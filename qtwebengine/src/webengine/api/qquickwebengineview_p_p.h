@@ -82,8 +82,6 @@ class QQuickWebEngineProfilePrivate;
 class QQuickWebEngineTouchHandleProvider;
 class QWebEngineFindTextResult;
 
-QQuickWebEngineView::WebAction editorActionForKeyEvent(QKeyEvent* event);
-
 #if QT_CONFIG(webengine_testsupport)
 class QQuickWebEngineTestSupport;
 #endif
@@ -217,6 +215,7 @@ public:
     QPointer<QQuickWebEngineView> inspectedView;
     QPointer<QQuickWebEngineView> devToolsView;
     uint m_webChannelWorld;
+    bool m_defaultAudioMuted;
     bool m_isBeingAdopted;
     mutable QQuickWebEngineAction *actions[QQuickWebEngineView::WebActionCount];
     QtWebEngineCore::RenderWidgetHostViewQtDelegateQuick *widget = nullptr;

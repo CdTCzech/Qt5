@@ -137,6 +137,8 @@ void QTabBarPrivate::updateMacBorderMetrics()
     }
 
     QPlatformNativeInterface *nativeInterface = QGuiApplication::platformNativeInterface();
+    if (!nativeInterface)
+        return;
     quintptr identifier = reinterpret_cast<quintptr>(q);
 
     // Set geometry
@@ -2292,6 +2294,8 @@ void QTabBar::mouseReleaseEvent(QMouseEvent *event)
         d->dragStartPosition = QPoint();
     }
 
+    // mouse release event might happen outside the tab, so keep the pressed index
+    int oldPressedIndex = d->pressedIndex;
     int i = d->indexAtPos(event->pos()) == d->pressedIndex ? d->pressedIndex : -1;
     d->pressedIndex = -1;
     QStyleOptionTabBarBase optTabBase;
@@ -2301,8 +2305,8 @@ void QTabBar::mouseReleaseEvent(QMouseEvent *event)
             (style()->styleHint(QStyle::SH_TabBar_SelectMouseType, &optTabBase, this) == QEvent::MouseButtonRelease);
     if (selectOnRelease)
         setCurrentIndex(i);
-    if (!selectOnRelease || !d->validIndex(i) || d->currentIndex == i)
-        repaint(tabRect(i));
+    if (d->validIndex(oldPressedIndex))
+        update(tabRect(oldPressedIndex));
 }
 
 /*!\reimp

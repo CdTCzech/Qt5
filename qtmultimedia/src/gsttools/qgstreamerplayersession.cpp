@@ -162,7 +162,15 @@ void QGstreamerPlayerSession::initPlaybin()
     }
 
 #if GST_CHECK_VERSION(1,0,0)
-    m_videoIdentity = gst_element_factory_make("identity", nullptr); // floating ref
+    static const auto convDesc = qEnvironmentVariable("QT_GSTREAMER_PLAYBIN_CONVERT");
+    GError *err = nullptr;
+    auto convPipeline = !convDesc.isEmpty() ? convDesc.toLatin1().constData() : "identity";
+    auto convElement = gst_parse_launch(convPipeline, &err);
+    if (err) {
+        qWarning() << "Error:" << convDesc << ":" << QLatin1String(err->message);
+        g_clear_error(&err);
+    }
+    m_videoIdentity = convElement;
 #else
     m_videoIdentity = GST_ELEMENT(g_object_new(gst_video_connector_get_type(), 0)); // floating ref
     g_signal_connect(G_OBJECT(m_videoIdentity), "connection-failed", G_CALLBACK(insertColorSpaceElement), (gpointer)this);
@@ -494,10 +502,12 @@ void QGstreamerPlayerSession::setPlaybackRate(qreal rate)
     if (!qFuzzyCompare(m_playbackRate, rate)) {
         m_playbackRate = rate;
         if (m_pipeline && m_seekable) {
+            qint64 from = rate > 0 ? position() : 0;
+            qint64 to = rate > 0 ? duration() : position();
             gst_element_seek(m_pipeline, rate, GST_FORMAT_TIME,
                              GstSeekFlags(GST_SEEK_FLAG_FLUSH),
-                             GST_SEEK_TYPE_NONE,0,
-                             GST_SEEK_TYPE_END, 0);
+                             GST_SEEK_TYPE_SET, from * 1000000,
+                             GST_SEEK_TYPE_SET, to * 1000000);
         }
         emit playbackRateChanged(m_playbackRate);
     }
@@ -1078,15 +1088,13 @@ bool QGstreamerPlayerSession::seek(qint64 ms)
     //seek locks when the video output sink is changing and pad is blocked
     if (m_pipeline && !m_pendingVideoSink && m_state != QMediaPlayer::StoppedState && m_seekable) {
         ms = qMax(ms,qint64(0));
-        gint64  position = ms * 1000000;
-        bool isSeeking = gst_element_seek(m_pipeline,
-                                          m_playbackRate,
-                                          GST_FORMAT_TIME,
+        qint64 from = m_playbackRate > 0 ? ms : 0;
+        qint64 to = m_playbackRate > 0 ? duration() : ms;
+
+        bool isSeeking = gst_element_seek(m_pipeline, m_playbackRate, GST_FORMAT_TIME,
                                           GstSeekFlags(GST_SEEK_FLAG_FLUSH),
-                                          GST_SEEK_TYPE_SET,
-                                          position,
-                                          GST_SEEK_TYPE_NONE,
-                                          0);
+                                          GST_SEEK_TYPE_SET, from * 1000000,
+                                          GST_SEEK_TYPE_SET, to * 1000000);
         if (isSeeking)
             m_lastPosition = ms;
 

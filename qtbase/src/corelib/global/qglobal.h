@@ -305,6 +305,8 @@ typedef double qreal;
 #  define QT_DEPRECATED_VARIABLE
 #  undef QT_DEPRECATED_CONSTRUCTOR
 #  define QT_DEPRECATED_CONSTRUCTOR
+#  undef Q_DECL_ENUMERATOR_DEPRECATED
+#  define Q_DECL_ENUMERATOR_DEPRECATED
 #endif
 
 #ifndef QT_DEPRECATED_WARNINGS_SINCE
@@ -1282,7 +1284,7 @@ Q_CORE_EXPORT QT_DEPRECATED_VERSION_X_5_15("use QRandomGenerator instead") int q
 #if !defined(QT_BOOTSTRAPPED) && defined(QT_REDUCE_RELOCATIONS) && defined(__ELF__) && \
     (!defined(__PIC__) || (defined(__PIE__) && defined(Q_CC_GNU) && Q_CC_GNU >= 500))
 #  error "You must build your code with position independent code if Qt was built with -reduce-relocations. "\
-         "Compile your code with -fPIC (-fPIE is not enough)."
+         "Compile your code with -fPIC (and not with -fPIE)."
 #endif
 
 namespace QtPrivate {

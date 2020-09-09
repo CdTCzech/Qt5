@@ -43,7 +43,7 @@ using namespace QQmlJS;
 class DumpAstVisitor : protected Visitor
 {
 public:
-    DumpAstVisitor(Node *rootNode, CommentAstVisitor *comment);
+    DumpAstVisitor(QQmlJS::Engine *engine, Node *rootNode, CommentAstVisitor *comment);
 
     QString toString() const { return m_result; }
 
@@ -58,6 +58,10 @@ public:
     void endVisit(UiObjectBinding *node) override;
 
     bool visit(FunctionDeclaration *node) override;
+    void endVisit(FunctionDeclaration *node) override;
+
+    bool visit(UiInlineComponent *node) override;
+    void endVisit(UiInlineComponent *node) override;
 
     bool visit(UiObjectDefinition *node) override;
     void endVisit(UiObjectDefinition *node) override;
@@ -83,6 +87,7 @@ private:
         bool m_firstProperty = true;
         bool m_firstBinding = true;
         bool m_firstObject = true;
+        bool m_firstFunction = true;
         bool m_inArrayBinding = false;
         bool m_pendingBinding = false;
 
@@ -143,6 +148,7 @@ private:
     QStack<ScopeProperties> m_scope_properties;
 
     QString m_result = "";
+    QQmlJS::Engine *m_engine;
     CommentAstVisitor *m_comment;
 };
 

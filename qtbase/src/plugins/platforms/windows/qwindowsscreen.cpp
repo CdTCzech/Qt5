@@ -51,6 +51,7 @@
 #include <QtGui/qguiapplication.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qhighdpiscaling_p.h>
+#include <private/qwindowsfontdatabase_p.h>
 #include <QtGui/qscreen.h>
 
 #include <QtCore/qdebug.h>
@@ -111,8 +112,11 @@ static bool monitorData(HMONITOR hMonitor, QWindowsScreenData *data)
     // EnumDisplayMonitors (as opposed to EnumDisplayDevices) enumerates only
     // virtual desktop screens.
     data->flags |= QWindowsScreenData::VirtualDesktop;
-    if (info.dwFlags & MONITORINFOF_PRIMARY)
+    if (info.dwFlags & MONITORINFOF_PRIMARY) {
         data->flags |= QWindowsScreenData::PrimaryScreen;
+        if ((data->flags & QWindowsScreenData::LockScreen) == 0)
+            QWindowsFontDatabase::setDefaultVerticalDPI(data->dpi.second);
+    }
     return true;
 }
 
@@ -565,8 +569,10 @@ bool QWindowsScreenManager::handleScreenChanges()
                 removeScreen(i);
         }     // for existing screens
     }     // not lock screen
-    if (primaryScreenChanged)
-        QWindowsTheme::instance()->refreshFonts();
+    if (primaryScreenChanged) {
+        if (auto theme = QWindowsTheme::instance()) // QTBUG-85734/Wine
+            theme->refreshFonts();
+    }
     return true;
 }
 

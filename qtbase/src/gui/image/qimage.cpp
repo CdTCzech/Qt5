@@ -74,6 +74,8 @@
 #include "qthreadpool.h"
 #endif
 
+#include <qtgui_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
 
 static inline bool isLocked(QImageData *data)
@@ -127,6 +129,8 @@ QImageData * QImageData::create(const QSize &size, QImage::Format format)
 {
     if (size.isEmpty() || format == QImage::Format_Invalid)
         return nullptr;                             // invalid parameter(s)
+
+    Q_TRACE_SCOPE(QImageData_create, size, format);
 
     int width = size.width();
     int height = size.height();
@@ -1159,6 +1163,7 @@ static void copyMetadata(QImage *dst, const QImage &src)
 */
 QImage QImage::copy(const QRect& r) const
 {
+    Q_TRACE_SCOPE(QImage_copy, r);
     if (!d)
         return QImage();
 
@@ -2149,12 +2154,7 @@ static QImage convertWithPalette(const QImage &src, QImage::Format format,
     QImage dest(src.size(), format);
     dest.setColorTable(clut);
 
-    QString textsKeys = src.text();
-    const auto textKeyList = textsKeys.splitRef(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    for (const auto &textKey : textKeyList) {
-        const auto textKeySplitted = textKey.split(QLatin1String(": "));
-        dest.setText(textKeySplitted[0].toString(), textKeySplitted[1].toString());
-    }
+    QImageData::get(dest)->text = QImageData::get(src)->text;
 
     int h = src.height();
     int w = src.width();
@@ -2826,6 +2826,8 @@ QImage QImage::scaled(const QSize& s, Qt::AspectRatioMode aspectMode, Qt::Transf
     if (newSize == size())
         return *this;
 
+    Q_TRACE_SCOPE(QImage_scaled, s, aspectMode, mode);
+
     QTransform wm = QTransform::fromScale((qreal)newSize.width() / width(), (qreal)newSize.height() / height());
     QImage img = transformed(wm, mode);
     return img;
@@ -2854,6 +2856,8 @@ QImage QImage::scaledToWidth(int w, Qt::TransformationMode mode) const
     if (w <= 0)
         return QImage();
 
+    Q_TRACE_SCOPE(QImage_scaledToWidth, w, mode);
+
     qreal factor = (qreal) w / width();
     QTransform wm = QTransform::fromScale(factor, factor);
     return transformed(wm, mode);
@@ -2881,6 +2885,8 @@ QImage QImage::scaledToHeight(int h, Qt::TransformationMode mode) const
     }
     if (h <= 0)
         return QImage();
+
+    Q_TRACE_SCOPE(QImage_scaledToHeight, h, mode);
 
     qreal factor = (qreal) h / height();
     QTransform wm = QTransform::fromScale(factor, factor);
@@ -3394,6 +3400,8 @@ QImage QImage::rgbSwapped_helper() const
 {
     if (isNull())
         return *this;
+
+    Q_TRACE_SCOPE(QImage_rgbSwapped_helper);
 
     QImage res;
 
@@ -4768,6 +4776,8 @@ QImage QImage::transformed(const QTransform &matrix, Qt::TransformationMode mode
     if (!d)
         return QImage();
 
+    Q_TRACE_SCOPE(QImage_transformed, matrix, mode);
+
     // source image data
     int ws = width();
     int hs = height();
@@ -5047,15 +5057,16 @@ void QImage::applyColorTransform(const QColorTransform &transform)
         };
     }
 
-#if QT_CONFIG(thread)
+#if QT_CONFIG(thread) && !defined(Q_OS_WASM)
     int segments = sizeInBytes() / (1<<16);
     segments = std::min(segments, height());
-    if (segments > 1) {
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments > 1 && !threadPool->contains(QThread::currentThread())) {
         QSemaphore semaphore;
         int y = 0;
         for (int i = 0; i < segments; ++i) {
             int yn = (height() - y) / (segments - i);
-            QThreadPool::globalInstance()->start([&, y, yn]() {
+            threadPool->start([&, y, yn]() {
                 transformSegment(y, y + yn);
                 semaphore.release(1);
             });

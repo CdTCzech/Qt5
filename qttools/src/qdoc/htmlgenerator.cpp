@@ -1631,12 +1631,15 @@ void HtmlGenerator::generateCollectionNode(CollectionNode *cn, CodeMarker *marke
     generateKeywordAnchors(cn);
     generateTitle(fullTitle, Text() << cn->subtitle(), subTitleSize, cn, marker);
 
-    if (cn->isModule()) {
-        // Generate brief text and status for modules.
-        generateBrief(cn, marker);
+    // Generate brief for C++ modules, status for all modules.
+    if (cn->genus() != Node::DOC && cn->genus() != Node::DontCare) {
+        if (cn->isModule())
+            generateBrief(cn, marker);
         generateStatus(cn, marker);
         generateSince(cn, marker);
+    }
 
+    if (cn->isModule()) {
         if (!cn->noAutoList()) {
             NodeMultiMap nmm;
             cn->getMemberNamespaces(nmm);
@@ -1657,8 +1660,7 @@ void HtmlGenerator::generateCollectionNode(CollectionNode *cn, CodeMarker *marke
         }
     }
 
-    Text brief = cn->doc().briefText();
-    if (cn->isModule() && !brief.isEmpty()) {
+    if (cn->isModule() && !cn->doc().briefText().isEmpty()) {
         generateExtractionMark(cn, DetailedDescriptionMark);
         ref = registerRef("details");
         out() << "<a name=\"" << ref << "\"></a>" << divNavTop << '\n';
@@ -3841,6 +3843,21 @@ void HtmlGenerator::generateManifestFiles()
 }
 
 /*!
+  Retrieve the install path for the \a example as specified with
+  the \meta command, or fall back to the one defined in .qdocconf.
+ */
+QString HtmlGenerator::retrieveInstallPath(const ExampleNode *example)
+{
+    QString installPath = example->doc().metaTagMap().value(QLatin1String("installpath"));
+    if (installPath.isEmpty())
+        installPath = examplesPath;
+    if (!installPath.isEmpty() && !installPath.endsWith(QLatin1Char('/')))
+        installPath += QLatin1Char('/');
+
+    return installPath;
+}
+
+/*!
   This function is called by generateManifestFiles(), once
   for each manifest file to be generated. \a manifest is the
   type of manifest file.
@@ -3889,13 +3906,7 @@ void HtmlGenerator::generateManifestFile(const QString &manifest, const QString 
             continue;
         }
 
-        // Retrieve the install path specified with \meta command,
-        // or fall back to the one defined in .qdocconf
-        QString installPath = en->doc().metaTagMap().value(QLatin1String("installpath"));
-        if (installPath.isEmpty())
-            installPath = examplesPath;
-        if (!installPath.isEmpty() && !installPath.endsWith(QLatin1Char('/')))
-            installPath += QLatin1Char('/');
+        const QString installPath = retrieveInstallPath(en);
         // attributes that are always written for the element
         usedAttributes.clear();
         usedAttributes << "name"
@@ -3916,8 +3927,8 @@ void HtmlGenerator::generateManifestFile(const QString &manifest, const QString 
 
         QString fullName = project + QLatin1Char('/') + en->title();
         QSet<QString> tags;
-        for (int idx = 0; idx < manifestMetaContent.size(); ++idx) {
-            const auto names = manifestMetaContent[idx].names;
+        for (const auto &index : manifestMetaContent) {
+            const auto &names = index.names;
             for (const QString &name : names) {
                 bool match = false;
                 int wildcard = name.indexOf(QChar('*'));
@@ -3932,8 +3943,8 @@ void HtmlGenerator::generateManifestFile(const QString &manifest, const QString 
                     match = fullName.startsWith(name.left(wildcard));
                 }
                 if (match) {
-                    tags += manifestMetaContent[idx].tags;
-                    const auto attributes = manifestMetaContent[idx].attributes;
+                    tags += index.tags;
+                    const auto attributes = index.attributes;
                     for (const QString &attr : attributes) {
                         QLatin1Char div(':');
                         QStringList attrList = attr.split(div);

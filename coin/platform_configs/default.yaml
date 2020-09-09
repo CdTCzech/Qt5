@@ -60,9 +60,10 @@ Configurations:
     Configure arguments: '-opensource -confirm-license -verbose -prefix /home/qt/work/install -developer-build -nomake tests -nomake examples -no-pch -R . -openssl -I {{.Env.OPENSSL_HOME}}/include -L {{.Env.OPENSSL_HOME}}/lib'
 -
     Template: 'qtci-linux-openSUSE-15.1-x86_64'
-    Compiler: 'ICC_18'
+    Compiler: 'ICC'
     Features: ['DisableTests']
     Configure arguments: '-opensource -confirm-license -verbose -prefix /home/qt/work/install -developer-build -nomake tests -nomake examples -no-pch -system-sqlite -R . -platform linux-icc-64 -openssl -I {{.Env.OPENSSL_HOME}}/include -L {{.Env.OPENSSL_HOME}}/lib'
+    Environment variables: ['LD_LIBRARY_PATH=$ICC64_19_LDLP:$LD_LIBRARY_PATH', 'PATH=$ICC64_19_PATH:$PATH' ]
 -
     Template: 'qtci-linux-openSUSE-15.1-x86_64'
     Target os: 'WebAssembly'
@@ -72,7 +73,7 @@ Configurations:
 -
     Template: 'qtci-linux-SLES-15-x86_64'
     Compiler: 'GCC'
-    Features: ['DisableTests']
+    Features: ['Insignificant']
     Configure arguments: '-opensource -confirm-license -verbose -prefix /home/qt/work/install -developer-build -no-sql-mysql -no-pch -R . -openssl -I {{.Env.OPENSSL_HOME}}/include -L {{.Env.OPENSSL_HOME}}/lib'
 -
     Template: 'qtci-linux-RHEL-7.6-x86_64'
@@ -146,4 +147,4 @@ Configurations:
     Target arch: 'armv7'
     Compiler: 'GCC'
     Features: ['Packaging', 'DisableTests']
-    Configure arguments: '-opensource -confirm-license -verbose -extprefix /home/qt/work/install -release -nomake tests -nomake examples -no-use-gold-linker -opengl es2 -no-sql-mysql -qpa qnx -xplatform qnx-armle-v7-qcc'
+    Configure arguments: '-opensource -confirm-license -verbose -extprefix /home/qt/work/install -release -nomake tests -nomake examples -no-use-gold-linker -opengl es2 -no-sql-mysql -qpa qnx -xplatform qnx-armle-v7-qcc -I /opt/qnx700/target/qnx7/usr/include/openssl1_1'

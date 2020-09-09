@@ -1202,8 +1202,16 @@ void QLocale::setDefault(const QLocale &locale)
 {
     default_data = locale.d->m_data;
 
-    if (defaultLocalePrivate.exists()) // update the cached private
-        *defaultLocalePrivate = locale.d;
+    if (defaultLocalePrivate.isDestroyed())
+        return; // avoid crash on exit
+    if (!defaultLocalePrivate.exists()) {
+        // Force it to exist; see QTBUG-83016
+        QLocale ignoreme;
+        Q_ASSERT(defaultLocalePrivate.exists());
+    }
+
+    // update the cached private
+    *defaultLocalePrivate = locale.d;
 }
 
 /*!
@@ -2050,7 +2058,7 @@ QString QLocale::toString(const QDate &date, QStringView format) const
 
 /*!
     Returns a localized string representation of the given \a date according
-    to the specified \a format.
+    to the specified \a format (see dateFormat()).
 
     \note Some locales may use formats that limit the range of years they can
     represent.
@@ -2207,7 +2215,7 @@ QString QLocale::toString(const QDateTime &dateTime, QStringView format, QCalend
     \since 4.4
 
     Returns a localized string representation of the given \a dateTime according
-    to the specified \a format.
+    to the specified \a format (see dateTimeFormat()).
 
     \note Some locales may use formats that limit the range of years they can
     represent.
@@ -2236,7 +2244,7 @@ QString QLocale::toString(const QDateTime &dateTime, FormatType format) const
 
 /*!
     Returns a localized string representation of the given \a time in the
-    specified \a format.
+    specified \a format (see timeFormat()).
 */
 
 QString QLocale::toString(const QTime &time, FormatType format) const
@@ -2264,8 +2272,9 @@ QString QLocale::toString(const QTime &time, FormatType format) const
 
     Returns the date format used for the current locale.
 
-    If \a format is LongFormat the format will be a long version.
-    Otherwise it uses a shorter version.
+    If \a format is LongFormat, the format will be elaborate, otherwise it will be short.
+    For example, LongFormat for the \c{en_US} locale is \c{dddd, MMMM d, yyyy},
+    ShortFormat is \c{M/d/yy}.
 
     \sa QDate::toString(), QDate::fromString()
 */
@@ -2302,8 +2311,9 @@ QString QLocale::dateFormat(FormatType format) const
 
     Returns the time format used for the current locale.
 
-    If \a format is LongFormat the format will be a long version.
-    Otherwise it uses a shorter version.
+    If \a format is LongFormat, the format will be elaborate, otherwise it will be short.
+    For example, LongFormat for the \c{en_US} locale is \c{h:mm:ss AP t},
+    ShortFormat is \c{h:mm AP}.
 
     \sa QTime::toString(), QTime::fromString()
 */
@@ -2340,8 +2350,9 @@ QString QLocale::timeFormat(FormatType format) const
 
     Returns the date time format used for the current locale.
 
-    If \a format is ShortFormat the format will be a short version.
-    Otherwise it uses a longer version.
+    If \a format is LongFormat, the format will be elaborate, otherwise it will be short.
+    For example, LongFormat for the \c{en_US} locale is \c{dddd, MMMM d, yyyy h:mm:ss AP t},
+    ShortFormat is \c{M/d/yy h:mm AP}.
 
     \sa QDateTime::toString(), QDateTime::fromString()
 */
@@ -2854,6 +2865,10 @@ QList<QLocale::Country> QLocale::countriesForLanguage(Language language)
     Returns the localized name of \a month, in the format specified
     by \a type.
 
+    For example, if the locale is \c en_US and \a month is 1,
+    \l LongFormat will return \c January. \l ShortFormat \c Jan,
+    and \l NarrowFormat \c J.
+
     \sa dayName(), standaloneMonthName()
 */
 QString QLocale::monthName(int month, FormatType type) const
@@ -2883,6 +2898,10 @@ QString QLocale::standaloneMonthName(int month, FormatType type) const
     Returns the localized name of the \a day (where 1 represents
     Monday, 2 represents Tuesday and so on), in the format specified
     by \a type.
+
+    For example, if the locale is \c en_US and \a day is 1,
+    \l LongFormat will return \c Monday, \l ShortFormat \c Mon,
+    and \l NarrowFormat \c M.
 
     \sa monthName(), standaloneDayName()
 */
@@ -4163,18 +4182,6 @@ qulonglong QLocaleData::stringToUnsLongLong(QStringView str, int base, bool *ok,
     return bytearrayToUnsLongLong(buff.constData(), base, ok);
 }
 
-double QLocaleData::bytearrayToDouble(const char *num, bool *ok)
-{
-    bool nonNullOk = false;
-    int len = static_cast<int>(strlen(num));
-    Q_ASSERT(len >= 0);
-    int processed = 0;
-    double d = qt_asciiToDouble(num, len, nonNullOk, processed);
-    if (ok != nullptr)
-        *ok = nonNullOk;
-    return d;
-}
-
 qlonglong QLocaleData::bytearrayToLongLong(const char *num, int base, bool *ok)
 {
     bool _ok;
@@ -4509,7 +4516,7 @@ QStringList QLocale::uiLanguages() const
         if (!res.isNull()) {
             uiLanguages = res.toStringList();
             // ... but we need to include likely-adjusted forms of each of those, too:
-            for (const auto entry : qAsConst(uiLanguages))
+            for (const auto &entry : qAsConst(uiLanguages))
                 locales.append(QLocale(entry));
         }
         if (locales.isEmpty())

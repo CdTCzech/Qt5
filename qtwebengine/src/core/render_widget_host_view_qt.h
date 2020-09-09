@@ -132,6 +132,7 @@ public:
     gfx::NativeViewAccessible GetNativeViewAccessible() override;
     void Focus() override;
     bool HasFocus() override;
+    bool IsMouseLocked() override;
     bool IsSurfaceAvailableForCopy() override;
     void CopyFromSurface(const gfx::Rect &src_rect,
                          const gfx::Size &output_size,
@@ -289,6 +290,7 @@ private:
     bool m_imeInProgress;
     bool m_receivedEmptyImeEvent;
     QPoint m_previousMousePosition;
+    bool m_isMouseLocked;
 
     gfx::Vector2dF m_lastScrollOffset;
     gfx::SizeF m_lastContentsSize;
@@ -317,6 +319,8 @@ private:
     gfx::SelectionBound m_selectionEnd;
 
     base::WeakPtrFactory<RenderWidgetHostViewQt> m_weakPtrFactory{this};
+
+    uint m_mouseButtonPressed = 0;
 };
 
 } // namespace QtWebEngineCore

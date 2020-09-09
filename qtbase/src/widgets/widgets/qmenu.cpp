@@ -40,6 +40,7 @@
 #include "qmenu.h"
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
+#include <QtWidgets/private/qwidgetwindow_p.h>
 
 #include "qdebug.h"
 #include "qstyle.h"
@@ -563,6 +564,35 @@ void QMenuPrivate::hideMenu(QMenu *menu)
 {
     if (!menu)
         return;
+
+    // See two execs below. They may trigger an akward situation
+    // when 'menu' (also known as 'q' or 'this' in the many functions
+    // around) to become a dangling pointer if the loop manages
+    // to execute 'deferred delete' ... posted while executing
+    // this same loop. Not good!
+    struct Reposter : QObject
+    {
+        Reposter(QMenu *menu) : q(menu)
+        {
+            Q_ASSERT(q);
+            q->installEventFilter(this);
+        }
+        ~Reposter()
+        {
+            if (deleteLater)
+                q->deleteLater();
+        }
+        bool eventFilter(QObject *obj, QEvent *event) override
+        {
+            if (obj == q && event->type() == QEvent::DeferredDelete)
+                return deleteLater = true;
+
+            return QObject::eventFilter(obj, event);
+        }
+        QMenu *q = nullptr;
+        bool deleteLater = false;
+    };
+
 #if QT_CONFIG(effects)
     QSignalBlocker blocker(menu);
     aboutToHide = true;
@@ -574,6 +604,7 @@ void QMenuPrivate::hideMenu(QMenu *menu)
         QAction *activeAction = currentAction;
 
         menu->setActiveAction(nullptr);
+        const Reposter deleteDeleteLate(menu);
         QTimer::singleShot(60, &eventLoop, SLOT(quit()));
         eventLoop.exec();
 
@@ -2343,15 +2374,23 @@ void QMenuPrivate::popup(const QPoint &p, QAction *atAction, PositionFunction po
     // Use d->popupScreen to remember, because initialScreenIndex will be reset after the first showing.
     // However if eventLoop exists, then exec() already did this by calling createWinId(); so leave it alone. (QTBUG-76162)
     if (!eventLoop) {
+        bool screenSet = false;
         const int screenIndex = topData()->initialScreenIndex;
         if (screenIndex >= 0)
             popupScreen = screenIndex;
         if (auto s = QGuiApplication::screens().value(popupScreen)) {
             if (setScreen(s))
                 itemsDirty = true;
-        } else if (setScreenForPoint(p)) {
-            itemsDirty = true;
+            screenSet = true;
+        } else if (QMenu *parentMenu = qobject_cast<QMenu *>(parent)) {
+            // a submenu is always opened from an open parent menu,
+            // so show it on the same screen where the parent is. (QTBUG-76162)
+            if (setScreen(parentMenu->screen()))
+                itemsDirty = true;
+            screenSet = true;
         }
+        if (!screenSet && setScreenForPoint(p))
+            itemsDirty = true;
     }
 
     const bool contextMenu = isContextMenu();

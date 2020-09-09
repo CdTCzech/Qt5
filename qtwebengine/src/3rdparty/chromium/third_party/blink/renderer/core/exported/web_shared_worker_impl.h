@@ -69,6 +69,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
   void StartWorkerContext(
       const WebURL&,
       const WebString& name,
+      WebSecurityOrigin constructor_origin,
       const WebString& user_agent,
       const WebString& content_security_policy,
       network::mojom::ContentSecurityPolicyType,
@@ -102,6 +103,8 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
 
   // |client_| owns |this|.
   WebSharedWorkerClient* client_;
+
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_connect_event_;
 
   bool asked_to_terminate_ = false;
 

@@ -43,6 +43,17 @@ Item {
     id: testCase
 
     /*!
+        \qmlsignal QDocTest::completed
+    */
+    signal completed
+
+    /*!
+        \qmlsignal DocTest::test(var bar)
+        Signal with parameter \a bar.
+    */
+    signal foo(var bar)
+
+    /*!
         \qmlproperty string DocTest::name
 
         Name of the test.
@@ -80,5 +91,15 @@ Item {
     function doctest_fail(msg) {
         if (msg === undefined)
             msg = "";
+    }
+
+    /*!
+    \brief Fails the current test case, hard.
+    \list
+        \li Prints out \a msg.
+        \li Accepts a random \a option.
+    \endlist
+    */
+    function fail_hard(msg = "facepalm", option = 123) {
     }
 }

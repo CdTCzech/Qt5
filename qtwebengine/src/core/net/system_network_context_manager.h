@@ -105,27 +105,6 @@ public:
     // Destroys the global SystemNetworkContextManager instance.
     static void DeleteInstance();
 
-    // If the network service is disabled, |network_context_request| will be for
-    // the NetworkContext used by the SystemNetworkContextManager and
-    // |network_context_params| as needed to set up a system NetworkContext.
-    // Otherwise, this method can still be used to help set up the IOThread's
-    // in-process URLRequestContext.
-    //
-    // Must be called before the system NetworkContext is first used.
-    //
-    // |stub_resolver_enabled|, |dns_over_https_servers|,
-    // |http_auth_static_params|, |http_auth_dynamic_params|, and
-    // |is_quic_allowed| are used to pass initial NetworkService state to the
-    // caller, so the NetworkService can be configured appropriately. Using
-    // NetworkService's Mojo interface to set those options would lead to races
-    // with other UI->IO thread network-related tasks, since Mojo doesn't preserve
-    // execution order relative to PostTasks.
-    void SetUp(network::mojom::NetworkContextRequest *network_context_request,
-               network::mojom::NetworkContextParamsPtr *network_context_params, bool *stub_resolver_enabled,
-               base::Optional<std::vector<network::mojom::DnsOverHttpsServerPtr>> *dns_over_https_servers,
-               network::mojom::HttpAuthStaticParamsPtr *http_auth_static_params,
-               network::mojom::HttpAuthDynamicParamsPtr *http_auth_dynamic_params, bool *is_quic_allowed);
-
     // Returns the System NetworkContext. May only be called after SetUp(). Does
     // any initialization of the NetworkService that may be needed when first
     // called.
@@ -167,12 +146,12 @@ private:
 
     // NetworkContext using the network service, if the network service is
     // enabled. nullptr, otherwise.
-    network::mojom::NetworkContextPtr network_service_network_context_;
+    mojo::Remote<network::mojom::NetworkContext> network_service_network_context_;
 
     // URLLoaderFactory backed by the NetworkContext returned by GetContext(), so
     // consumers don't all need to create their own factory.
     scoped_refptr<URLLoaderFactoryForSystem> shared_url_loader_factory_;
-    network::mojom::URLLoaderFactoryPtr url_loader_factory_;
+    mojo::Remote<network::mojom::URLLoaderFactory> url_loader_factory_;
 
     ProxyConfigMonitor proxy_config_monitor_;
 

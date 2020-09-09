@@ -150,7 +150,6 @@ public:
     {
         LightGatherer::run();
 
-        QMutexLocker lock(m_cache->mutex());
         m_cache->gatheredLights = lights();
         m_cache->environmentLight = environmentLight();
     }
@@ -175,7 +174,6 @@ public:
         QVector<Entity *> selectedEntities = filteredEntities();
         std::sort(selectedEntities.begin(), selectedEntities.end());
 
-        QMutexLocker lock(m_cache->mutex());
         m_cache->renderableEntities = selectedEntities;
     }
 
@@ -199,7 +197,6 @@ public:
         QVector<Entity *> selectedEntities = filteredEntities();
         std::sort(selectedEntities.begin(), selectedEntities.end());
 
-        QMutexLocker lock(m_cache->mutex());
         m_cache->computeEntities = selectedEntities;
     }
 
@@ -453,32 +450,30 @@ void Renderer::initialize()
     m_submissionContext.reset(new SubmissionContext);
     m_submissionContext->setRenderer(this);
 
-    QOpenGLContext* ctx = m_glContext;
-
     {
         QMutexLocker lock(&m_shareContextMutex);
         // If we are using our own context (not provided by QtQuick),
         // we need to create it
         if (!m_glContext) {
-            ctx = new QOpenGLContext;
+            m_glContext = new QOpenGLContext;
             if (m_screen)
-                ctx->setScreen(m_screen);
-            ctx->setShareContext(qt_gl_global_share_context());
+                m_glContext->setScreen(m_screen);
+            m_glContext->setShareContext(qt_gl_global_share_context());
 
             // TO DO: Shouldn't we use the highest context available and trust
             // QOpenGLContext to fall back on the best lowest supported ?
             const QByteArray debugLoggingMode = qgetenv("QT3DRENDER_DEBUG_LOGGING");
 
             if (!debugLoggingMode.isEmpty()) {
-                QSurfaceFormat sf = ctx->format();
+                QSurfaceFormat sf = m_glContext->format();
                 sf.setOption(QSurfaceFormat::DebugContext);
-                ctx->setFormat(sf);
+                m_glContext->setFormat(sf);
             }
 
-            // Create OpenGL context<<<<<<< HEAD
+            // Create OpenGL context
 
-            if (ctx->create())
-                qCDebug(Backend) << "OpenGL context created with actual format" << ctx->format();
+            if (m_glContext->create())
+                qCDebug(Backend) << "OpenGL context created with actual format" << m_glContext->format();
             else
                 qCWarning(Backend) << Q_FUNC_INFO << "OpenGL context creation failed";
             m_ownedContext = true;
@@ -491,28 +486,28 @@ void Renderer::initialize()
                                                    [this] { releaseGraphicsResources(); });
         }
 
-        qCDebug(Backend) << "Qt3D shared context:" << ctx->shareContext();
+        qCDebug(Backend) << "Qt3D shared context:" << m_glContext->shareContext();
         qCDebug(Backend) << "Qt global shared context:" << qt_gl_global_share_context();
 
-        if (!ctx->shareContext()) {
+        if (!m_glContext->shareContext()) {
             m_shareContext = new QOpenGLContext;
-            if (ctx->screen())
-                m_shareContext->setScreen(ctx->screen());
-            m_shareContext->setFormat(ctx->format());
-            m_shareContext->setShareContext(ctx);
+            if (m_glContext->screen())
+                m_shareContext->setScreen(m_glContext->screen());
+            m_shareContext->setFormat(m_glContext->format());
+            m_shareContext->setShareContext(m_glContext);
             m_shareContext->create();
         }
 
         // Note: we don't have a surface at this point
         // The context will be made current later on (at render time)
-        m_submissionContext->setOpenGLContext(ctx);
+        m_submissionContext->setOpenGLContext(m_glContext);
 
         // Store the format used by the context and queue up creating an
         // offscreen surface in the main thread so that it is available
         // for use when we want to shutdown the renderer. We need to create
         // the offscreen surface on the main thread because on some platforms
         // (MS Windows), an offscreen surface is just a hidden QWindow.
-        m_format = ctx->format();
+        m_format = m_glContext->format();
         QMetaObject::invokeMethod(m_offscreenHelper, "createOffscreenSurface");
     }
 
@@ -601,14 +596,14 @@ void Renderer::releaseGraphicsResources()
     if (context->thread() == QThread::currentThread() && context->makeCurrent(offscreenSurface)) {
 
         // Clean up the graphics context and any resources
-        const QVector<HGLTexture> activeTexturesHandles = m_glResourceManagers->glTextureManager()->activeHandles();
+        const std::vector<HGLTexture> &activeTexturesHandles = m_glResourceManagers->glTextureManager()->activeHandles();
         for (const HGLTexture &textureHandle : activeTexturesHandles) {
             GLTexture *tex = m_glResourceManagers->glTextureManager()->data(textureHandle);
             tex->destroy();
         }
 
         // Do the same thing with buffers
-        const QVector<HGLBuffer> activeBuffers = m_glResourceManagers->glBufferManager()->activeHandles();
+        const std::vector<HGLBuffer> &activeBuffers = m_glResourceManagers->glBufferManager()->activeHandles();
         for (const HGLBuffer &bufferHandle : activeBuffers) {
             GLBuffer *buffer = m_glResourceManagers->glBufferManager()->data(bufferHandle);
             buffer->destroy(m_submissionContext.data());
@@ -619,11 +614,13 @@ void Renderer::releaseGraphicsResources()
         qDeleteAll(shaders);
 
         // Do the same thing with VAOs
-        const QVector<HVao> activeVaos = m_glResourceManagers->vaoManager()->activeHandles();
+        const std::vector<HVao> &activeVaos = m_glResourceManagers->vaoManager()->activeHandles();
         for (const HVao &vaoHandle : activeVaos) {
             OpenGLVertexArrayObject *vao = m_glResourceManagers->vaoManager()->data(vaoHandle);
             vao->destroy();
         }
+
+        m_submissionContext->releaseRenderTargets();
 
         m_frameProfiler.reset();
         context->doneCurrent();
@@ -939,8 +936,7 @@ void Renderer::prepareCommandsSubmission(const QVector<RenderView *> &renderView
     QHash<HVao, bool> updatedTable;
 
     for (RenderView *rv: renderViews) {
-        QVector<RenderCommand> &commands = rv->commands();
-        for (RenderCommand &command : commands) {
+        rv->forEachCommand([&] (RenderCommand &command) {
             // Update/Create VAO
             if (command.m_type == RenderCommand::Draw) {
                 Geometry *rGeometry = m_nodesManager->data<Geometry, GeometryManager>(command.m_geometry);
@@ -999,7 +995,7 @@ void Renderer::prepareCommandsSubmission(const QVector<RenderView *> &renderView
                 GLShader *shader = command.m_glShader;
                 Q_ASSERT(shader);
             }
-        }
+        });
     }
 
     // Make sure we leave nothing bound
@@ -1021,7 +1017,7 @@ void Renderer::prepareCommandsSubmission(const QVector<RenderView *> &renderView
 // Executed in a job
 void Renderer::lookForAbandonedVaos()
 {
-    const QVector<HVao> activeVaos = m_glResourceManagers->vaoManager()->activeHandles();
+    const std::vector<HVao> &activeVaos = m_glResourceManagers->vaoManager()->activeHandles();
     for (HVao handle : activeVaos) {
         OpenGLVertexArrayObject *vao = m_glResourceManagers->vaoManager()->data(handle);
 
@@ -1038,7 +1034,7 @@ void Renderer::lookForAbandonedVaos()
 // Executed in a job
 void Renderer::lookForDirtyBuffers()
 {
-    const QVector<HBuffer> activeBufferHandles = m_nodesManager->bufferManager()->activeHandles();
+    const std::vector<HBuffer> &activeBufferHandles = m_nodesManager->bufferManager()->activeHandles();
     for (const HBuffer &handle: activeBufferHandles) {
         Buffer *buffer = m_nodesManager->bufferManager()->data(handle);
         if (buffer->isDirty())
@@ -1050,7 +1046,7 @@ void Renderer::lookForDirtyBuffers()
 void Renderer::lookForDownloadableBuffers()
 {
     m_downloadableBuffers.clear();
-    const QVector<HBuffer> activeBufferHandles = m_nodesManager->bufferManager()->activeHandles();
+    const std::vector<HBuffer> &activeBufferHandles = m_nodesManager->bufferManager()->activeHandles();
     for (const HBuffer &handle : activeBufferHandles) {
         Buffer *buffer = m_nodesManager->bufferManager()->data(handle);
         if (buffer->access() & QBuffer::Read)
@@ -1066,7 +1062,7 @@ void Renderer::lookForDirtyTextures()
     // image has been updated to then notify textures referencing the image
     // that they need to be updated
     TextureImageManager *imageManager = m_nodesManager->textureImageManager();
-    const QVector<HTextureImage> activeTextureImageHandles = imageManager->activeHandles();
+    const std::vector<HTextureImage> &activeTextureImageHandles = imageManager->activeHandles();
     Qt3DCore::QNodeIdVector dirtyImageIds;
     for (const HTextureImage &handle: activeTextureImageHandles) {
         TextureImage *image = imageManager->data(handle);
@@ -1077,7 +1073,7 @@ void Renderer::lookForDirtyTextures()
     }
 
     TextureManager *textureManager = m_nodesManager->textureManager();
-    const QVector<HTexture> activeTextureHandles = textureManager->activeHandles();
+    const std::vector<HTexture> &activeTextureHandles = textureManager->activeHandles();
     for (const HTexture &handle: activeTextureHandles) {
         Texture *texture = textureManager->data(handle);
         const QNodeIdVector imageIds = texture->textureImageIds();
@@ -1104,8 +1100,8 @@ void Renderer::lookForDirtyTextures()
 void Renderer::reloadDirtyShaders()
 {
     Q_ASSERT(isRunning());
-    const QVector<HTechnique> activeTechniques = m_nodesManager->techniqueManager()->activeHandles();
-    const QVector<HShaderBuilder> activeBuilders = m_nodesManager->shaderBuilderManager()->activeHandles();
+    const std::vector<HTechnique> &activeTechniques = m_nodesManager->techniqueManager()->activeHandles();
+    const std::vector<HShaderBuilder> &activeBuilders = m_nodesManager->shaderBuilderManager()->activeHandles();
     for (const HTechnique &techniqueHandle : activeTechniques) {
         Technique *technique = m_nodesManager->techniqueManager()->data(techniqueHandle);
         // If api of the renderer matches the one from the technique
@@ -1160,7 +1156,7 @@ void Renderer::sendShaderChangesToFrontend(Qt3DCore::QAspectManager *manager)
     Q_ASSERT(isRunning());
 
     // Sync Shader
-    const QVector<HShader> activeShaders = m_nodesManager->shaderManager()->activeHandles();
+    const std::vector<HShader> &activeShaders = m_nodesManager->shaderManager()->activeHandles();
     for (const HShader &handle :activeShaders) {
         Shader *s = m_nodesManager->shaderManager()->data(handle);
         if (s->requiresFrontendSync()) {
@@ -1248,7 +1244,7 @@ void Renderer::sendDisablesToFrontend(Qt3DCore::QAspectManager *manager)
     }
 
     // Compute Commands
-    const QVector<HComputeCommand> activeCommands = m_nodesManager->computeJobManager()->activeHandles();
+    const std::vector<HComputeCommand> &activeCommands = m_nodesManager->computeJobManager()->activeHandles();
     for (const HComputeCommand &handle :activeCommands) {
         ComputeCommand *c = m_nodesManager->computeJobManager()->data(handle);
         if (c->hasReachedFrameCount()) {
@@ -1349,7 +1345,7 @@ void Renderer::updateGLResources()
         QNodeIdVector updatedTexturesForFrame;
         if (m_submissionContext != nullptr) {
             GLTextureManager *glTextureManager = m_glResourceManagers->glTextureManager();
-            const QVector<HGLTexture> glTextureHandles = glTextureManager->activeHandles();
+            const std::vector<HGLTexture> &glTextureHandles = glTextureManager->activeHandles();
             // Upload texture data
             for (const HGLTexture &glTextureHandle : glTextureHandles) {
                 GLTexture *glTexture = glTextureManager->data(glTextureHandle);
@@ -1526,7 +1522,7 @@ Renderer::ViewSubmissionResultData Renderer::submitRenderViews(const QVector<Ren
     for (int i = 0; i < renderViewsCount; ++i) {
         // Initialize GraphicsContext for drawing
         // If the RenderView has a RenderStateSet defined
-        const RenderView *renderView = renderViews.at(i);
+        RenderView *renderView = renderViews.at(i);
 
         if (renderView->shouldSkipSubmission())
             continue;
@@ -1918,14 +1914,7 @@ QVector<Qt3DCore::QAspectJobPtr> Renderer::renderBinJobs()
                 m_updatedDisableSubtreeEnablers.push_back(node->peerId());
         }
 
-        int idealThreadCount = QThread::idealThreadCount();
-        const QByteArray maxThreadCount = qgetenv("QT3D_MAX_THREAD_COUNT");
-        if (!maxThreadCount.isEmpty()) {
-            bool conversionOK = false;
-            const int maxThreadCountValue = maxThreadCount.toInt(&conversionOK);
-            if (conversionOK)
-                idealThreadCount = maxThreadCountValue;
-        }
+        int idealThreadCount = QThreadPooler::maxThreadCount();
 
         const int fgBranchCount = m_frameGraphLeaves.size();
         if (fgBranchCount > 1) {
@@ -1934,7 +1923,7 @@ QVector<Qt3DCore::QAspectJobPtr> Renderer::renderBinJobs()
                 if (leaf->nodeType() == FrameGraphNode::NoDraw)
                     --workBranches;
 
-            if (idealThreadCount > 4 && workBranches && maxThreadCount.isEmpty())
+            if (idealThreadCount > 4 && workBranches)
                 idealThreadCount = qMax(4, idealThreadCount / workBranches);
         }
 
@@ -1948,6 +1937,12 @@ QVector<Qt3DCore::QAspectJobPtr> Renderer::renderBinJobs()
             builder.setLayerCacheNeedsToBeRebuilt(layersCacheNeedsToBeRebuilt || isNewRV);
             builder.setMaterialGathererCacheNeedsToBeRebuilt(materialCacheNeedsToBeRebuilt || isNewRV);
             builder.setRenderCommandCacheNeedsToBeRebuilt(renderCommandsDirty || isNewRV);
+            builder.setLightCacheNeedsToBeRebuilt(lightsDirty);
+
+            // Insert leaf into cache
+            if (isNewRV) {
+                m_cache.leafNodeCache[leaf] = {};
+            }
 
             builder.prepareJobs();
             renderBinJobs.append(builder.buildJobHierachy());
@@ -1984,7 +1979,7 @@ QAbstractFrameAdvanceService *Renderer::frameAdvanceService() const
 }
 
 // Called by executeCommands
-void Renderer::performDraw(RenderCommand *command)
+void Renderer::performDraw(const RenderCommand *command)
 {
     // Indirect Draw Calls
     if (command->m_drawIndirect) {
@@ -2110,12 +2105,11 @@ void Renderer::createOrUpdateVAO(RenderCommand *command,
 
 // Called by RenderView->submit() in RenderThread context
 // Returns true, if all RenderCommands were sent to the GPU
-bool Renderer::executeCommandsSubmission(const RenderView *rv)
+bool Renderer::executeCommandsSubmission(RenderView *rv)
 {
     bool allCommandsIssued = true;
 
     // Render drawing commands
-    QVector<RenderCommand> commands = rv->commands();
 
     // Use the graphicscontext to submit the commands to the underlying
     // graphics API (OpenGL)
@@ -2124,7 +2118,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
     RenderStateSet *globalState = m_submissionContext->currentStateSet();
     OpenGLVertexArrayObject *vao = nullptr;
 
-    for (RenderCommand &command : commands) {
+    rv->forEachCommand([&] (RenderCommand &command) {
 
         if (command.m_type == RenderCommand::Compute) { // Compute Call
             performCompute(rv, &command);
@@ -2132,7 +2126,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
             // Check if we have a valid command that can be drawn
             if (!command.m_isValid) {
                 allCommandsIssued = false;
-                continue;
+                return;
             }
 
             vao = m_glResourceManagers->vaoManager()->data(command.m_vao);
@@ -2140,7 +2134,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
             // something may have went wrong when initializing the VAO
             if (!vao->isSpecified()) {
                 allCommandsIssued = false;
-                continue;
+                return;
             }
 
             {
@@ -2149,7 +2143,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
                 GLShader *shader = command.m_glShader;
                 if (!m_submissionContext->activateShader(shader)) {
                     allCommandsIssued = false;
-                    continue;
+                    return;
                 }
             }
 
@@ -2166,7 +2160,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
                     allCommandsIssued = false;
                     // If we have failed to set uniform (e.g unable to bind a texture)
                     // we won't perform the draw call which could show invalid content
-                    continue;
+                    return;
                 }
             }
 
@@ -2194,7 +2188,7 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
             //// Draw Calls
             performDraw(&command);
         }
-    } // end of RenderCommands loop
+    }); // end of RenderCommands loop
 
     // We cache the VAO and release it only at the end of the exectute frame
     // We try to minimize VAO binding between RenderCommands

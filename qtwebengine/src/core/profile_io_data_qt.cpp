@@ -43,6 +43,7 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/browsing_data_remover.h"
 #include "content/public/browser/shared_cors_origin_access_list.h"
 #include "content/public/common/content_features.h"
 #include "net/ssl/ssl_config_service_defaults.h"
@@ -66,6 +67,7 @@ ProfileIODataQt::ProfileIODataQt(ProfileQt *profile)
 #if QT_CONFIG(ssl)
       m_clientCertificateStoreData(new ClientCertificateStoreData),
 #endif
+      m_removerObserver(this),
       m_weakPtrFactory(this)
 {
     if (content::BrowserThread::IsThreadInitialized(content::BrowserThread::UI))
@@ -130,6 +132,42 @@ void ProfileIODataQt::initializeOnUIThread()
     m_proxyConfigMonitor.reset(new ProxyConfigMonitor(m_profile->GetPrefs()));
 }
 
+void ProfileIODataQt::clearHttpCache()
+{
+    Q_ASSERT(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    if (!m_clearHttpCacheInProgress) {
+        m_clearHttpCacheInProgress = true;
+        content::BrowsingDataRemover *remover =
+                content::BrowserContext::GetBrowsingDataRemover(m_profileAdapter->profile());
+        remover->AddObserver(&m_removerObserver);
+        remover->RemoveAndReply(base::Time(), base::Time::Max(),
+            content::BrowsingDataRemover::DATA_TYPE_CACHE,
+            content::BrowsingDataRemover::ORIGIN_TYPE_UNPROTECTED_WEB |
+                        content::BrowsingDataRemover::ORIGIN_TYPE_PROTECTED_WEB,
+            &m_removerObserver);
+    }
+}
+
+void ProfileIODataQt::removeBrowsingDataRemoverObserver()
+{
+    content::BrowsingDataRemover *remover =
+            content::BrowserContext::GetBrowsingDataRemover(m_profileAdapter->profile());
+    remover->RemoveObserver(&m_removerObserver);
+}
+
+BrowsingDataRemoverObserverQt::BrowsingDataRemoverObserverQt(ProfileIODataQt *profileIOData)
+    : m_profileIOData(profileIOData)
+{
+}
+
+void BrowsingDataRemoverObserverQt::OnBrowsingDataRemoverDone()
+{
+    Q_ASSERT(m_profileIOData->m_clearHttpCacheInProgress);
+    m_profileIOData->removeBrowsingDataRemoverObserver();
+    m_profileIOData->m_clearHttpCacheInProgress = false;
+    m_profileIOData->resetNetworkContext();
+}
+
 void ProfileIODataQt::setFullConfiguration()
 {
     Q_ASSERT(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -141,6 +179,8 @@ void ProfileIODataQt::setFullConfiguration()
     m_httpCacheMaxSize = m_profileAdapter->httpCacheMaxSize();
     m_useForGlobalCertificateVerification = m_profileAdapter->isUsedForGlobalCertificateVerification();
     m_dataPath = m_profileAdapter->dataPath();
+    m_storageName = m_profileAdapter->storageName();
+    m_inMemoryOnly = m_profileAdapter->isOffTheRecord() || m_storageName.isEmpty();
 }
 
 void ProfileIODataQt::resetNetworkContext()
@@ -172,7 +212,7 @@ std::unique_ptr<net::ClientCertStore> ProfileIODataQt::CreateClientCertStore()
 #if QT_CONFIG(ssl)
     return std::unique_ptr<net::ClientCertStore>(new ClientCertOverrideStore(m_clientCertificateStoreData));
 #else
-    return nullptr;
+    return std::unique_ptr<net::ClientCertStore>(new ClientCertOverrideStore(nullptr));
 #endif
 }
 
@@ -183,7 +223,7 @@ network::mojom::NetworkContextParamsPtr ProfileIODataQt::CreateNetworkContextPar
     network::mojom::NetworkContextParamsPtr network_context_params =
              SystemNetworkContextManager::GetInstance()->CreateDefaultNetworkContextParams();
 
-    network_context_params->context_name = m_profile->profileAdapter()->storageName().toStdString();
+    network_context_params->context_name = m_storageName.toStdString();
     network_context_params->user_agent = m_httpUserAgent.toStdString();
     network_context_params->accept_language = m_httpAcceptLanguage.toStdString();
 
@@ -196,7 +236,7 @@ network::mojom::NetworkContextParamsPtr ProfileIODataQt::CreateNetworkContextPar
     if (m_httpCacheType == ProfileAdapter::DiskHttpCache && !m_httpCachePath.isEmpty())
         network_context_params->http_cache_path = toFilePath(m_httpCachePath);
 
-    if (m_persistentCookiesPolicy != ProfileAdapter::NoPersistentCookies && !m_dataPath.isEmpty()) {
+    if (m_persistentCookiesPolicy != ProfileAdapter::NoPersistentCookies && !m_inMemoryOnly) {
         base::FilePath cookie_path = toFilePath(m_dataPath);
         cookie_path = cookie_path.AppendASCII("Cookies");
         network_context_params->cookie_path = cookie_path;
@@ -204,7 +244,7 @@ network::mojom::NetworkContextParamsPtr ProfileIODataQt::CreateNetworkContextPar
         network_context_params->restore_old_session_cookies = m_persistentCookiesPolicy == ProfileAdapter::ForcePersistentCookies;
         network_context_params->persist_session_cookies = m_persistentCookiesPolicy != ProfileAdapter::NoPersistentCookies;
     }
-    if (!m_dataPath.isEmpty()) {
+    if (!m_inMemoryOnly) {
         network_context_params->http_server_properties_path = toFilePath(m_dataPath).AppendASCII("Network Persistent State");
         network_context_params->transport_security_persister_path = toFilePath(m_dataPath);
     }
